@@ -1,7 +1,7 @@
 CC:= gcc
-CFLAGS:= -std=c11 -pedantic -pedantic-errors -g -Wall -Werror -Wextra -D_POSIX_C_SOURCE=200112L -fsanitize=address
+CFLAGS:= -std=c11 -pedantic -pedantic-errors -g -Wall -Werror -Wextra -D_POSIX_C_SOURCE=200112L -fsanitize=address -Wno-unused-parameter
 SMTPD_CLI:= smtpd
-SMTPD_OBJECTS:= args.o main.o
+SMTPD_OBJECTS:= args.o selector.o main.o
 
 .PHONY: all clean
 
@@ -11,6 +11,8 @@ $(SMTPD_CLI): $(SMTPD_OBJECTS)
 	$(CC) $(CFLAGS) -o $@ $^
 
 args.o: args.h
+
+selector.o: selector.h
 
 clean:
 	- rm $(SMTPD_CLI) *.o

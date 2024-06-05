@@ -16,7 +16,6 @@
 #include <limits.h>
 #include <errno.h>
 #include <signal.h>
-#include <stdbool.h>
 #include "args.h"
 
 #include <unistd.h>
@@ -26,7 +25,7 @@
 #include <netinet/tcp.h>
 
 // #include "socks5.h"
-// #include "selector.h"
+#include "selector.h"
 // #include "socks5nio.h"
 
 static bool done = false;
@@ -38,7 +37,7 @@ sigterm_handler(const int signal) {
 }
 
 int
-main(const int argc, const char **argv) {
+main(const int argc, char **argv) {
 
     struct smtpargs args;
 
@@ -55,7 +54,7 @@ main(const int argc, const char **argv) {
     memset(&addr, 0, sizeof(addr));
     addr.sin_family      = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr.sin_port        = htons(port);
+    addr.sin_port        = htons(args.socks_port);
 
     const int server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if(server < 0) {
@@ -63,7 +62,7 @@ main(const int argc, const char **argv) {
         goto finally;
     }
 
-    fprintf(stdout, "Listening on TCP port %d\n", port);
+    fprintf(stdout, "Listening on TCP port %d\n", args.socks_port);
 
     // man 7 ip. no importa reportar nada si falla.
     setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
@@ -105,7 +104,8 @@ main(const int argc, const char **argv) {
         goto finally;
     }
     const struct fd_handler socksv5 = {
-        .handle_read       = socksv5_passive_accept,
+        // .handle_read       = socksv5_passive_accept,
+        .handle_read       = NULL,
         .handle_write      = NULL,
         .handle_close      = NULL, // nada que liberar
     };
@@ -144,7 +144,7 @@ finally:
     }
     selector_close();
 
-    socksv5_pool_destroy();
+    // socksv5_pool_destroy();
 
     if(server >= 0) {
         close(server);
