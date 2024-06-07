@@ -12,10 +12,10 @@ remaining_set(struct request_parser* p, const int n) {
     p->n = n;
 }
 
-static int
+/* static int
 remaining_is_done(struct request_parser* p) {
     return p->i >= p->n;
-}
+} */
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -36,19 +36,21 @@ verb(const uint8_t c, struct request_parser* p) {
             break;
     } */
 
+    p->request->verb[0] = c;
+
     return next;
 }
 
 static enum request_state
-cmd(const uint8_t c, struct request_parser* p) {
-    p->request->cmd = c;
-
-    return request_rsv;
+sep_arg1(const uint8_t c, struct request_parser* p) {
+    return request_arg1;
 }
 
 static enum request_state
-rsv(const uint8_t c, struct request_parser* p) {
-    return request_atyp;
+arg1(const uint8_t c, struct request_parser* p) {
+    p->request->arg1[0] = c;
+
+    return request_done;
 }
 
 
