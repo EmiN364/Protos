@@ -6,4 +6,8 @@ set(CMAKE_C_FLAGS "-pedantic -pedantic-errors -g -Wall -Werror -Wextra -D_POSIX_
 
 add_executable(TPE_Protos src/main.c
         src/args.c
-        src/selector.c)
+        src/selector.c
+        src/smtp.c
+        src/smtp.h
+        src/libs/smtpnio.h
+        src/libs/smtpnio.c)
