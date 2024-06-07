@@ -103,13 +103,11 @@ main(const int argc, char **argv) {
         goto finally;
     }
     const struct fd_handler smtp = {
-        // .handle_read       = smtp_passive_accept,
-        .handle_read       = NULL,
+        .handle_read       = smtp_passive_accept,
         .handle_write      = NULL,
         .handle_close      = NULL, // nada que liberar
     };
-    ss = selector_register(selector, server, &smtp,
-                                              OP_READ, NULL);
+    ss = selector_register(selector, server, &smtp, OP_READ, NULL);
     if(ss != SELECTOR_SUCCESS) {
         err_msg = "registering fd";
         goto finally;

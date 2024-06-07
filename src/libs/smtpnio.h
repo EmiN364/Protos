@@ -34,6 +34,9 @@ struct smtp {
  int client_fd;
  int origin_fd;
 
+ char *mail_from;
+ char []recpt_to;
+
  /** maquinas de estados */
  struct state_machine          stm;
 
