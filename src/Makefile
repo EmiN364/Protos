@@ -28,7 +28,7 @@ clean:
 	- rm -f $(SMTPD_CLI) *.o request_test
 
 request_test: request_test.o request.o buffer.o
-	$(CC) $(CFLAGS) -o $@ $^ -pthread -lcheck_pic -pthread -lrt -lm -lsubunit
+	$(CC) $(CFLAGS) -o $@ $^ -pthread -lcheck_pic -lrt -lm -lsubunit
 
 test: request_test
 	./request_test

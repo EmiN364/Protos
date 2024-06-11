@@ -10,4 +10,8 @@ add_executable(TPE_Protos src/main.c
         src/smtp.c
         src/smtp.h
         src/stm.c
-        src/stm.h)
+        src/stm.h
+        src/buffer.c
+        src/buffer.h)
+
+add_executable(request_test src/request_test.c src/request.c src/buffer.c)

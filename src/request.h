@@ -16,15 +16,17 @@ enum request_state {
 	request_verb,
 	request_sep_arg1,
 	request_arg1,
-    request_cr,
 
-	// a partir de aca están done
+	request_cr,
+	request_data,
+
+	// apartir de aca están done
 	request_done,
 
 	// y apartir de aca son considerado con error
 	request_error,
-
-    // request_error_unsupported_atyp,
+	/* request_error_unknown_verb,
+	request_error_invalid_length, */
 
 };
 
@@ -33,6 +35,8 @@ struct request_parser {
 	enum request_state state;
 	/** cuantos bytes ya leimos */
 	uint8_t i;
+
+	// opc. punteros a funcion / enum con comandos
 };
 
 /** inicializa el parser */

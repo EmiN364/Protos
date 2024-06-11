@@ -34,6 +34,11 @@ struct smtp {
 	/** buffers */
 	uint8_t raw_buff_read[2048], raw_buff_write[2048];  // TODO: Fix this
 	buffer read_buffer, write_buffer;
+
+	/*
+	 * mailfrom
+	 * lista receipients
+	 */
 };
 
 /** maquina de estados general */
@@ -64,19 +69,23 @@ enum smtpstate {
 	 */
 	REQUEST_READ,
 
+	// TODO: Add DATA_READ. A medida q voy leyendo voy escribiendo en el archivo
+	// En caso de transform, en vez de escribir al archivo directo, escribimos a otro programa. Desp leemos
+	// la salida de ese programa, y eso lo escribimos al archivo
+
 	// estados terminales
 	DONE,
 	ERROR,
 };
 
-static void request_read_init(const unsigned st, struct selector_key *key) {
-    struct request_parser* p = &ATTACHMENT(key)->request_parser;
-    p->request = &ATTACHMENT(key)->request;
-    request_parser_init(p);
+static void request_read_init(const unsigned state, struct selector_key *key) {
+	struct request_parser* p = &ATTACHMENT(key)->request_parser;
+	p->request = &ATTACHMENT(key)->request;
+	request_parser_init(p);
 }
 
 static void request_read_close(const unsigned state, struct selector_key *key) {
-    request_close(&ATTACHMENT(key)->request_parser);
+	request_close(&ATTACHMENT(key)->request_parser);
 }
 
 /** lee todos los bytes del mensaje de tipo `hello' y inicia su proceso */
@@ -91,25 +100,26 @@ static unsigned request_read(struct selector_key *key) {
 	if (n > 0) {
 		buffer_write_adv(&state->read_buffer, n);
 
+		bool error = false;
+		int st = request_consume(&state->read_buffer, &state->request_parser, &error);
+		if (request_is_done(st, 0)) {
+			if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+                
+                // Procesamiento
+                
+				ret = RESPONSE_WRITE;
+				// ret = request_process(d); // tengo todo completo
 
-        bool error = false;
-        int st = request_consume(&state->read_buffer, &state->request_parser, &error);
-        if(request_is_done(st, 0)) {
-            // Procesamiento
-            // request_read_process
+				ptr = buffer_write_ptr(&state->write_buffer, &count);
 
-            if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
-                ret = RESPONSE_WRITE;
-
-                ptr = buffer_write_ptr(&state->write_buffer, &count);
-
-                // TODO: Check count with n (min(n,count))
-                memcpy(ptr, "200\r\n", 5);
-                buffer_write_adv(&state->write_buffer, n);
-            } else {
-                ret = ERROR;
-            }
-        }
+				// TODO: Check count with n (min(n,count))
+				memcpy(ptr, "200\r\n", 5);
+				buffer_write_adv(&state->write_buffer, n);
+                
+			} else {
+				ret = ERROR;
+			}
+		}
 	} else {
 		ret = ERROR;
 	}
@@ -149,15 +159,15 @@ static unsigned response_write(struct selector_key *key) {
 static const struct state_definition client_statbl[] = {
     {
 	     .state = RESPONSE_WRITE, /*
-	     .on_arrival       = hello_read_init,
-	     .on_departure     = hello_read_close,*/
-	     .on_write_ready = response_write,
+	     .on_arrival       = request_read_init,
+	     .on_departure     = request_read_close,*/
+	     .on_write_ready   = response_write,
     },
     {
 	     .state = REQUEST_READ,
-	     .on_arrival       = request_read_init,
+	     .on_arrival       = request_read_init, // TODO: Add init
 	     .on_departure     = request_read_close,
-	     .on_read_ready = request_read,
+	     .on_read_ready	   = request_read,
     },
     {
 		.state = DONE,
