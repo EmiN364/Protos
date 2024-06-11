@@ -9,7 +9,7 @@
 static void
 remaining_set(struct request_parser* p, const int n) {
     p->i = 0;
-    p->n = n;
+    // p->n = n;
 }
 
 /* static int
@@ -67,13 +67,30 @@ request_parser_feed (struct request_parser* p, const uint8_t c) {
 
     switch(p->state) {
         case request_verb:
-            next = verb(c, p);
+            switch (c) {
+                case '\r':
+                    next = request_cr;
+                    break;
+                default:
+                    next = request_verb;
+                    break;
+            }
             break;
-        case request_sep_arg1:
-            next = sep_arg(c, p);
+        /*case request_sep_arg1:
+            next = sep_arg1(c, p);
             break;
         case request_arg1:
             next = arg1(c, p);
+            break; */
+        case request_cr:
+            switch (c) {
+                case '\n':
+                    next = request_done;
+                    break;
+                default:
+                    next = request_verb;
+                    break;
+            }
             break;
         case request_done:
         case request_error:

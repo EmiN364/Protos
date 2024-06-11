@@ -16,14 +16,15 @@ enum request_state {
 	request_verb,
 	request_sep_arg1,
 	request_arg1,
+    request_cr,
 
-	// apartir de aca están done
+	// a partir de aca están done
 	request_done,
 
 	// y apartir de aca son considerado con error
 	request_error,
-	/* request_error_unknown_verb,
-	request_error_unsupported_atyp, */
+
+    // request_error_unsupported_atyp,
 
 };
 
