@@ -3,4 +3,5 @@ cmake-build-debug/
 *.o
 cmake-build-debug-wsl/
 src/smtpd
+src/request_test
 .bash_history
