@@ -49,7 +49,7 @@ int main(const int argc, char **argv) {
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	addr.sin_port = htons(args.socks_port);
+	addr.sin_port = htons(args.smtp_port);
 
 	const int server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (server < 0) {
@@ -57,7 +57,7 @@ int main(const int argc, char **argv) {
 		goto finally;
 	}
 
-	fprintf(stdout, "Listening on TCP port %d\n", args.socks_port);
+	fprintf(stdout, "Listening on TCP port %d\n", args.smtp_port);
 
 	// man 7 ip. no importa reportar nada si falla.
 	setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));

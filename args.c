@@ -50,12 +50,13 @@ usage(const char *progname) {
         "Usage: %s [OPTION]...\n"
         "\n"
         "   -h               Imprime la ayuda y termina.\n"
-        "   -l <SOCKS addr>  Dirección donde servirá el proxy SOCKS.\n"
+        "   -l <SOCKS addr>  Dirección donde servirá el servidor SMTP.\n"
         "   -L <conf  addr>  Dirección donde servirá el servicio de management.\n"
-        "   -p <SOCKS port>  Puerto entrante conexiones SOCKS.\n"
+        "   -p <SOCKS port>  Puerto entrante conexiones SMTP.\n"
         "   -P <conf port>   Puerto entrante conexiones configuracion\n"
-        "   -u <name>:<pass> Usuario y contraseña de usuario que puede usar el proxy. Hasta 10.\n"
-        "   -v               Imprime información sobre la versión versión y termina.\n"
+        "   -u <name>:<pass> Usuario y contraseña de usuario. Hasta 10.\n"
+		"   -T               Apaga las transformaciones.\n"
+		"   -v               Imprime información sobre la versión versión y termina.\n"
         "\n"/*
         "   --doh-ip    <ip>    \n"
         "   --doh-port  <port>  XXX\n"
@@ -72,13 +73,13 @@ void
 parse_args(const int argc, char **argv, struct smtpargs *args) {
     memset(args, 0, sizeof(*args)); // sobre todo para setear en null los punteros de users
 
-    args->socks_addr = "0.0.0.0";
-    args->socks_port = 2525;
+    args->smtp_addr = "0.0.0.0";
+    args->smtp_port = 2525;
 
     args->mng_addr   = "127.0.0.1";
     args->mng_port   = 8080;
 
-    args->disectors_enabled = true;
+    args->transform_enabled = true;
 
     int c;
     int nusers = 0;
@@ -94,7 +95,7 @@ parse_args(const int argc, char **argv, struct smtpargs *args) {
             { 0,           0,                 0, 0 }
         };
 
-        c = getopt_long(argc, argv, "hl:L:Np:P:u:v", long_options, &option_index); // : significa que requiere argumento
+        c = getopt_long(argc, argv, "hl:L:Tp:P:u:v", long_options, &option_index); // : significa que requiere argumento
         if (c == -1)
             break;
 
@@ -103,16 +104,16 @@ parse_args(const int argc, char **argv, struct smtpargs *args) {
                 usage(argv[0]);
                 break;
             case 'l':
-                args->socks_addr = optarg;
+                args->smtp_addr = optarg;
                 break;
             case 'L':
                 args->mng_addr = optarg;
                 break;
-            case 'N':
-                args->disectors_enabled = false;
+            case 'T':
+                args->transform_enabled = false;
                 break;
             case 'p':
-                args->socks_port = port(optarg);
+                args->smtp_port = port(optarg);
                 break;
             case 'P':
                 args->mng_port   = port(optarg);

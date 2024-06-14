@@ -14,13 +14,13 @@ struct smtpargs {
 
     char *         mail_dir;
 
-    char           *socks_addr;
-    unsigned short  socks_port;
+    char           *smtp_addr;
+    unsigned short smtp_port;
 
     char *          mng_addr;
     unsigned short  mng_port;
 
-    bool            disectors_enabled;
+    bool 		    transform_enabled;
 
     struct users    users[MAX_USERS];
 };
