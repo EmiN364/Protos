@@ -2,6 +2,7 @@
 
 #include "buffer.h"
 #include "request.h"
+#include "data.h"
 #include "stm.h"
 
 #include <arpa/inet.h>
@@ -31,6 +32,7 @@ struct smtp {
 	/** parser */
 	struct request request;
 	struct request_parser request_parser;
+	struct data_parser data_parser;
 
 	/** buffers */
 	uint8_t raw_buff_read[2048], raw_buff_write[2048], raw_buff_file[2048];  // TODO: Fix this
@@ -102,7 +104,7 @@ enum smtpstate {
 	 *   - DATA_READ     cuando se me vacio el buffer
 	 *   - ERROR         ante cualquier error (IO/parseo)
 	 */
-	// DATA_WRITE,
+	DATA_WRITE,
 
 	// TODO: Add DATA_READ. A medida q voy leyendo voy escribiendo en el archivo
 	// En caso de transform, en vez de escribir al archivo directo, escribimos a otro programa. Desp leemos
@@ -209,23 +211,23 @@ static unsigned int data_read_posta(struct selector_key *key, struct smtp *state
 	unsigned int ret = DATA_READ;
 	bool error = false;
 
-	enum data_state st = p->state;
+	buffer * b = &state->read_buffer;
+	enum data_state st = state->data_parser.state;
 
 	while(buffer_can_read(b)) {
 		const uint8_t c = buffer_read(b);
-		st = data_parser_feed(p, c);
-		if(data_is_done(st, errored)) {
+		st = data_parser_feed(&state->data_parser, c);
+		if(data_is_done(st)) {
 			break;
 		}
 	}
 
-	struct selector_key key_file = {};
+	struct selector_key key_file; // TODO: Fix this
 
 	// write to file from buffer if is not empty
 	if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_NOOP)) {
-		if (SELECTOR_SUCCESS == selector_set_interest_key(key_file, OP_WRITE))
+		if (SELECTOR_SUCCESS == selector_set_interest_key(&key_file, OP_WRITE))
 			ret = DATA_WRITE; // Vuelvo a request_read
-
 	} else {
 		ret = ERROR;
 	}
@@ -283,12 +285,15 @@ static unsigned response_write(struct selector_key *key) {
 	return ret;
 }
 
+static unsigned data_write(struct selector_key *key) {
+	return REQUEST_READ;
+}
+
+
 /** definición de handlers para cada estado */
 static const struct state_definition client_statbl[] = {
     {
-	     .state = RESPONSE_WRITE, /*
-	     .on_arrival       = request_read_init,
-	     .on_departure     = request_read_close,*/
+	     .state = RESPONSE_WRITE,
 	     .on_write_ready   = response_write,
     },
     {
@@ -303,6 +308,10 @@ static const struct state_definition client_statbl[] = {
         .on_departure     = request_read_close,*/
      	.on_read_ready	   = data_read,
  	},
+    {
+    	 .state = DATA_WRITE,
+        .on_read_ready	   = data_write,
+     },
     {
 		.state = DONE,
     },
@@ -350,8 +359,12 @@ static void smtp_write(struct selector_key *key) {
 	}
 }
 
+static void smtp_destroy(struct smtp *state) {
+	free(state);
+}
+
 static void smtp_close(struct selector_key *key) {
-	// socks5_destroy(ATTACHMENT(key));
+	smtp_destroy(ATTACHMENT(key));
 }
 
 static void smtp_done(struct selector_key *key) {
@@ -361,10 +374,6 @@ static void smtp_done(struct selector_key *key) {
 		}
 		close(key->fd);
 	}
-}
-
-static void smtp_destroy(struct smtp *state) {
-	free(state);
 }
 
 /** Intenta aceptar la nueva conexión entrante*/
@@ -404,6 +413,8 @@ void smtp_passive_accept(struct selector_key *key) {
 
     state->request_parser.request = &state->request;
     request_parser_init(&state->request_parser);
+
+	data_parser_init(&state->data_parser);
 
 	if (SELECTOR_SUCCESS != selector_register(key->s, client, &smtp_handler, OP_WRITE, state)) {
 		goto fail;
