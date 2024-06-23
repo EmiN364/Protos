@@ -41,7 +41,8 @@ enum data_state {
 struct data_parser {
 	enum data_state state;
 
-	buffer * output_buffer;
+	buffer output_buffer;
+	uint8_t raw_buffer[2048];
 
 	// opc. punteros a funcion / enum con comandos
 };

@@ -6,11 +6,12 @@
 
 #include "data.h"
 
-//////////////////////////////////////////////////////////////////////////////
+#define N(x) (sizeof(x) / sizeof((x)[0]))
 
 extern void
 data_parser_init (struct data_parser* p) {
     p->state = data_crlf;
+	buffer_init(&p->output_buffer, N(p->raw_buffer), p->raw_buffer);
 }
 
 
@@ -23,7 +24,7 @@ data_parser_feed (struct data_parser* p, const uint8_t c) {
 			if (c == '\r')
 				next = data_cr;
 			else {
-				buffer_write(p->output_buffer, c);
+				buffer_write(&p->output_buffer, c);
 				next = data_data;
 			}
     		break;
@@ -31,8 +32,8 @@ data_parser_feed (struct data_parser* p, const uint8_t c) {
 			if (c == '\n')
 				next = data_crlf;
 			else {
-				buffer_write(p->output_buffer, '\r');
-				buffer_write(p->output_buffer, c);
+				buffer_write(&p->output_buffer, '\r');
+				buffer_write(&p->output_buffer, c);
 				next = data_data;
 			}
             break;
@@ -40,9 +41,9 @@ data_parser_feed (struct data_parser* p, const uint8_t c) {
 			if (c == '.')
 				next = data_crlfdot;
 			else {
-				buffer_write(p->output_buffer, '\r');
-				buffer_write(p->output_buffer, '\n');
-				buffer_write(p->output_buffer, c);
+				buffer_write(&p->output_buffer, '\r');
+				buffer_write(&p->output_buffer, '\n');
+				buffer_write(&p->output_buffer, c);
 				next = data_data;
 			}
             break;
@@ -50,10 +51,10 @@ data_parser_feed (struct data_parser* p, const uint8_t c) {
 			if (c == '\r')
 				next = data_crlfdotcr;
 			else {
-				buffer_write(p->output_buffer, '\r');
-				buffer_write(p->output_buffer, '\n');
-				buffer_write(p->output_buffer, '.');
-				buffer_write(p->output_buffer, c);
+				buffer_write(&p->output_buffer, '\r');
+				buffer_write(&p->output_buffer, '\n');
+				buffer_write(&p->output_buffer, '.');
+				buffer_write(&p->output_buffer, c);
 				next = data_data;
 			}
             break;
@@ -61,11 +62,11 @@ data_parser_feed (struct data_parser* p, const uint8_t c) {
 			if (c == '\n')
 				next = data_done;
 			else {
-				buffer_write(p->output_buffer, '\r');
-				buffer_write(p->output_buffer, '\n');
-				buffer_write(p->output_buffer, '.');
-				buffer_write(p->output_buffer, '\r');
-				buffer_write(p->output_buffer, c);
+				buffer_write(&p->output_buffer, '\r');
+				buffer_write(&p->output_buffer, '\n');
+				buffer_write(&p->output_buffer, '.');
+				buffer_write(&p->output_buffer, '\r');
+				buffer_write(&p->output_buffer, c);
 				next = data_data;
 			}
 			break;

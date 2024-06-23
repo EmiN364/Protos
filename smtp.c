@@ -1,22 +1,24 @@
 #include "smtp.h"
 
 #include "buffer.h"
-#include "request.h"
 #include "data.h"
+#include "request.h"
 #include "stm.h"
 
 #include <arpa/inet.h>
 #include <assert.h>  // assert
 #include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>  // malloc
 #include <string.h>  // memset
+#include <strings.h>
 #include <time.h>
 #include <unistd.h>  // close
-#include <strings.h>
 
 #define N(x) (sizeof(x) / sizeof((x)[0]))
+#define MIN(x,y) (x < y ? x : y)
 
 /** obtiene el struct (smtp *) desde la llave de selección  */
 #define ATTACHMENT(key) ((struct smtp *) (key)->data)
@@ -42,11 +44,8 @@ struct smtp {
 
 	char mailfrom[255];
 
-	int fileFd;
-	/*
-	 * mailfrom
-	 * lista receipients
-	 */
+	struct selector_key file;
+	char rcpt[255]; // TODO: Change to list
 };
 
 struct status {
@@ -106,7 +105,6 @@ enum smtpstate {
 	 */
 	DATA_WRITE,
 
-	// TODO: Add DATA_READ. A medida q voy leyendo voy escribiendo en el archivo
 	// En caso de transform, en vez de escribir al archivo directo, escribimos a otro programa. Desp leemos
 	// la salida de ese programa, y eso lo escribimos al archivo
 
@@ -125,48 +123,63 @@ static void request_read_close(const unsigned state, struct selector_key *key) {
 	request_close(&ATTACHMENT(key)->request_parser);
 }
 
-static enum smtpstate request_process(struct smtp * state) {
-	if (strcasecmp(state->request_parser.request->verb, "data") == 0) {
-		state->is_data = true;
-		return RESPONSE_WRITE;
-	}
+static void data_read_init(const unsigned state, struct selector_key *key) {
+	struct data_parser* p = &ATTACHMENT(key)->data_parser;
+	data_parser_init(p);
+}
 
-	if (strcasecmp(state->request_parser.request->verb, "mail from") == 0) {
+static void data_read_close(const unsigned state, struct selector_key *key) {
+	data_close(&ATTACHMENT(key)->data_parser);
+}
+
+static enum smtpstate request_process(struct smtp * state) {
+
+	char * response;
+	enum smtpstate res_state = RESPONSE_WRITE;
+
+	if (strcasecmp(state->request_parser.request->verb, "data") == 0) {
+		if (state->mailfrom[0] == '\0' || state->rcpt[0] == '\0') {
+			response = "503 5.5.1 Error: need RCPT command\r\n";
+		} else {
+			response = "354 End data with <CR><LF>.<CR><LF>\r\n";
+		}
+		state->is_data = true;
+
+		// Init new file
+
+	} else if (strcasecmp(state->request_parser.request->verb, "mail from") == 0) {
 		// TODO: Check arg1
 		strcpy(state->mailfrom, state->request_parser.request->arg1);
-
-		size_t count;
-		uint8_t *ptr;
-
-		// Generate response
-		ptr = buffer_write_ptr(&state->write_buffer, &count);
-
-		// TODO: Check count with n (min(n,count))
-		strcpy((char *) ptr, "250 Ok\r\n");
-		buffer_write_adv(&state->write_buffer, 8);
-
-		return RESPONSE_WRITE;
-	}
-	if (strcasecmp(state->request_parser.request->verb, "ehlo") == 0) {
-		/*
-		 *  250-emilio
-			250-PIPELINING
-			250 SIZE 10240000
-		 * */
-		return RESPONSE_WRITE;
+		response = "250 2.1.0 Ok\r\n";
+	} else if (strcasecmp(state->request_parser.request->verb, "rcpt to") == 0) {
+		if (state->mailfrom[0] == '\0') {
+			response = "503 5.5.1 Error: need MAIL command\r\n";
+		} else {
+			// TODO: Check arg1
+			strcpy(state->rcpt, state->request_parser.request->arg1);
+			response = "250 2.1.5 Ok\r\n";
+		}
+	} else if (strcasecmp(state->request_parser.request->verb, "ehlo") == 0) {
+		response = "250-localhost\n250-PIPELINING\n250 SIZE 10240000\r\n";
+	} else if (strcasecmp(state->request_parser.request->verb, "helo") == 0) {
+		response = "250 localhost\r\n";
+	} else if (strcasecmp(state->request_parser.request->verb, "quit") == 0) {
+		response = "221 2.0.0 Bye\r\n";
+		res_state = DONE;
+	} else if (state->request_parser.i > 0) {
+		response = "502 5.5.2 Error: command not recognized\r\n";
+	} else {
+		response = "500 5.5.2 Error: bad syntax\r\n";
 	}
 
 	size_t count;
-	uint8_t *ptr;
-
-	// Generate response
-	ptr = buffer_write_ptr(&state->write_buffer, &count);
+	uint8_t *ptr = buffer_write_ptr(&state->write_buffer, &count);
 
 	// TODO: Check count with n (min(n,count))
-	strcpy((char *) ptr, "250 Ok\r\n");
-	buffer_write_adv(&state->write_buffer, 8);
+	strcpy((char *) ptr, response);
+	buffer_write_adv(&state->write_buffer, strlen(response));
 
-	return RESPONSE_WRITE;
+	return res_state;
 }
 
 static unsigned int request_read_posta(struct selector_key *key, struct smtp *state) {
@@ -208,11 +221,10 @@ static unsigned request_read(struct selector_key *key) {
 }
 
 static unsigned int data_read_posta(struct selector_key *key, struct smtp *state) {
-	unsigned int ret = DATA_READ;
-	bool error = false;
+	unsigned int ret;
 
 	buffer * b = &state->read_buffer;
-	enum data_state st = state->data_parser.state;
+	enum data_state st;
 
 	while(buffer_can_read(b)) {
 		const uint8_t c = buffer_read(b);
@@ -222,15 +234,40 @@ static unsigned int data_read_posta(struct selector_key *key, struct smtp *state
 		}
 	}
 
-	struct selector_key key_file; // TODO: Fix this
+	const int file = open("mail.txt", O_WRONLY | O_APPEND | O_CREAT, 0644);
+	if (file == -1) {
+		return ERROR;
+	}
+
+	buffer *wb = &state->file_buffer;
+	size_t count;
+	const uint8_t *ptr = buffer_write_ptr(wb, &count);
+	const ssize_t n = write(file, ptr, count);
+
+	if (n >= 0)
+		buffer_write_adv(wb, n);
+
+	if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)) {
+		if (state->data_parser.state == data_done) {
+			ret = REQUEST_READ;
+		} else {
+			ret = DATA_READ;
+		}
+	} else {
+		ret = ERROR;
+	}
+
+	/*
+	struct selector_key key_file;
 
 	// write to file from buffer if is not empty
 	if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_NOOP)) {
 		if (SELECTOR_SUCCESS == selector_set_interest_key(&key_file, OP_WRITE))
-			ret = DATA_WRITE; // Vuelvo a request_read
+			ret = DATA_WRITE; // Desp Vuelvo a request_read
 	} else {
 		ret = ERROR;
 	}
+	*/
 
 	return ret;
 }
@@ -304,8 +341,8 @@ static const struct state_definition client_statbl[] = {
     },
     {
     	 .state = DATA_READ,
-     	/*.on_arrival       = request_read_init, // TODO: Add init
-        .on_departure     = request_read_close,*/
+     	.on_arrival       = data_read_init,
+        .on_departure     = data_read_close,
      	.on_read_ready	   = data_read,
  	},
     {
@@ -408,8 +445,11 @@ void smtp_passive_accept(struct selector_key *key) {
 	buffer_init(&state->read_buffer, N(state->raw_buff_read), state->raw_buff_read);
 	buffer_init(&state->write_buffer, N(state->raw_buff_write), state->raw_buff_write);
 
-	memcpy(&state->raw_buff_write, "Hola\n", 5);
-	buffer_write_adv(&state->write_buffer, 5);
+	const char* greeting = "220 localhost SMTP\r\n";
+	const int len = strlen(greeting);
+
+	memcpy(&state->raw_buff_write, greeting, len);
+	buffer_write_adv(&state->write_buffer, len);
 
     state->request_parser.request = &state->request;
     request_parser_init(&state->request_parser);

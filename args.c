@@ -22,7 +22,7 @@ port(const char *s) {
      return (unsigned short)sl;
 }
 
-static void
+/*static void
 user(char *s, struct users *user) {
     char *p = strchr(s, ':');
     if(p == NULL) {
@@ -34,14 +34,13 @@ user(char *s, struct users *user) {
         user->name = s;
         user->pass = p;
     }
-
-}
+}*/
 
 static void
 version(void) {
-    fprintf(stderr, "smtp version 0.0\n"
-                    "ITBA Protocolos de Comunicación 2024/1 -- Grupo X\n"
-                    "AQUI VA LA LICENCIA\n");
+    fprintf(stderr, "smtp version 1.0\n"
+                    "ITBA Protocolos de Comunicación 2024/1 -- Grupo 4\n"
+                    "LICENCIA MIT\n");
 }
 
 static void
@@ -50,21 +49,12 @@ usage(const char *progname) {
         "Usage: %s [OPTION]...\n"
         "\n"
         "   -h               Imprime la ayuda y termina.\n"
-        "   -l <SOCKS addr>  Dirección donde servirá el servidor SMTP.\n"
-        "   -L <conf  addr>  Dirección donde servirá el servicio de management.\n"
         "   -p <SOCKS port>  Puerto entrante conexiones SMTP.\n"
         "   -P <conf port>   Puerto entrante conexiones configuracion\n"
-        "   -u <name>:<pass> Usuario y contraseña de usuario. Hasta 10.\n"
-		"   -T               Apaga las transformaciones.\n"
+        "   -u <pass>		 Contraseña de admin. Hasta 10.\n"
+		"   -T <program>     Prende las transformaciones.\n"
 		"   -v               Imprime información sobre la versión versión y termina.\n"
-        "\n"/*
-        "   --doh-ip    <ip>    \n"
-        "   --doh-port  <port>  XXX\n"
-        "   --doh-host  <host>  XXX\n"
-        "   --doh-path  <host>  XXX\n"
-        "   --doh-query <host>  XXX\n"*/
-
-        "\n",
+        "\n\n",
         progname);
     exit(1);
 }
@@ -73,16 +63,11 @@ void
 parse_args(const int argc, char **argv, struct smtpargs *args) {
     memset(args, 0, sizeof(*args)); // sobre todo para setear en null los punteros de users
 
-    args->smtp_addr = "0.0.0.0";
     args->smtp_port = 2525;
 
-    args->mng_addr   = "127.0.0.1";
     args->mng_port   = 8080;
 
-    args->transform_enabled = true;
-
     int c;
-    int nusers = 0;
 
     while (true) {
         int option_index = 0;
@@ -95,7 +80,7 @@ parse_args(const int argc, char **argv, struct smtpargs *args) {
             { 0,           0,                 0, 0 }
         };
 
-        c = getopt_long(argc, argv, "hl:L:Tp:P:u:v", long_options, &option_index); // : significa que requiere argumento
+        c = getopt_long(argc, argv, "hT:p:P:u:v", long_options, &option_index); // : significa que requiere argumento
         if (c == -1)
             break;
 
@@ -103,14 +88,8 @@ parse_args(const int argc, char **argv, struct smtpargs *args) {
             case 'h':
                 usage(argv[0]);
                 break;
-            case 'l':
-                args->smtp_addr = optarg;
-                break;
-            case 'L':
-                args->mng_addr = optarg;
-                break;
             case 'T':
-                args->transform_enabled = false;
+                args->transformations = optarg;
                 break;
             case 'p':
                 args->smtp_port = port(optarg);
@@ -119,13 +98,7 @@ parse_args(const int argc, char **argv, struct smtpargs *args) {
                 args->mng_port   = port(optarg);
                 break;
             case 'u':
-                if(nusers >= MAX_USERS) {
-                    fprintf(stderr, "maximun number of command line users reached: %d.\n", MAX_USERS);
-                    exit(1);
-                } else {
-                    user(optarg, args->users + nusers);
-                    nusers++;
-                }
+                args->pass = optarg;
                 break;
             case 'v':
                 version();

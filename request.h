@@ -8,13 +8,15 @@
 #include <stdint.h>
 
 struct request {
-	char verb[10];
+	char verb[12];
 	char arg1[32];
 };
 
 enum request_state {
-	request_verb,
-	request_sep_arg1,
+	request_verb_check,
+	request_verb_simple,
+	request_verb_mult,
+
 	request_arg1,
 
 	request_cr,
@@ -35,6 +37,7 @@ struct request_parser {
 	enum request_state state;
 	/** cuantos bytes ya leimos */
 	uint8_t i;
+	uint8_t j;
 
 	// opc. punteros a funcion / enum con comandos
 };

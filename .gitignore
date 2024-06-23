@@ -5,3 +5,4 @@ cmake-build-debug-wsl/
 smtpd
 request_test
 .bash_history
+mail.txt

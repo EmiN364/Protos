@@ -6,59 +6,106 @@
 
 #include "request.h"
 
-static void
-remaining_set(struct request_parser* p, const int n) {
-    p->i = 0;
-    // p->n = n;
-}
-
-/* static int
-remaining_is_done(struct request_parser* p) {
-    return p->i >= p->n;
-} */
-
 //////////////////////////////////////////////////////////////////////////////
 
 static enum request_state
-verb(const uint8_t c, struct request_parser* p) {
+verb_check(const uint8_t c, struct request_parser* p) {
     enum request_state next;
+	switch (c) {
+		case 'M':
+		case 'm':
+		case 'r':
+		case 'R':
+			next = request_verb_mult;
+			break;
+		case '\r':
+			return request_cr;
+		default:
+			next = request_verb_simple;
+	}
+	p->request->verb[p->i++] = (char) c;
+    return next;
+}
+
+static enum request_state
+verb_simpl(const uint8_t c, struct request_parser* p) {
+	enum request_state next;
+	switch (c) {
+		case ' ':
+			next = request_arg1;
+			break;
+		case '\r':
+			next = request_cr;
+			break;
+		default:
+			next = request_verb_simple;
+	}
+	if (next == request_verb_simple) {
+		if ( p->i < sizeof(p->request->verb) - 1)
+			p->request->verb[p->i++] = (char) c;
+	}
+	else {
+		p->request->verb[p->i] = 0;
+	}
+
+	return next;
+}
+
+static enum request_state
+verb_mult(const uint8_t c, struct request_parser* p) {
+	enum request_state next;
+	switch (c) {
+		case ':':
+			next = request_arg1;
+			break;
+		case '\r':
+			next = request_cr;
+			break;
+		default:
+			next = request_verb_mult;
+	}
+	if (next == request_verb_mult) {
+		if ( p->i < sizeof(p->request->verb) - 1)
+			p->request->verb[p->i++] = (char) c;
+	}
+	else {
+		p->request->verb[p->i] = 0;
+	}
+
+	return next;
+}
+
+static enum request_state
+arg1(const uint8_t c, struct request_parser* p) {
+	enum request_state next;
+	if (c == ' ' && p->j == 0) {
+		return request_arg1;
+	}
 	switch (c) {
 		case '\r':
 			next = request_cr;
 			break;
 		default:
-			next = request_verb;
+			next = request_arg1;
 	}
-	if (next == request_verb) {
-		if ( p->i < sizeof(p->request->verb) - 1) //TODO: Check this
-			p->request->verb[p->i++] = (char) c;
+	if (next == request_arg1) {
+		if ( p->j < sizeof(p->request->arg1) - 1)
+			p->request->arg1[p->j++] = (char) c;
 	}
 	else {
-		p->request->verb[p->i] = 0;
-		/*if (strcmp(p->request->verb, "data") == 0)
-			next = request_data;*/
+		p->request->arg1[p->j] = 0;
 	}
 
-    return next;
-}
-
-static enum request_state
-sep_arg1(const uint8_t c, struct request_parser* p) {
-    return request_arg1;
-}
-
-static enum request_state
-arg1(const uint8_t c, struct request_parser* p) {
-    p->request->arg1[0] = c;
-
-    return request_done;
+	return next;
 }
 
 
 extern void
 request_parser_init (struct request_parser* p) {
-    p->state = request_verb;
-    memset(p->request, 0, sizeof(*(p->request)));
+    p->state = request_verb_check;
+    memset(p->request, 0, sizeof(*p->request));
+	p->i = 0;
+	p->j = 0;
 }
 
 
@@ -67,12 +114,15 @@ request_parser_feed (struct request_parser* p, const uint8_t c) {
     enum request_state next;
 
     switch(p->state) {
-        case request_verb:
-        	next = verb(c, p);
+        case request_verb_check:
+        	next = verb_check(c, p);
     		break;
-        case request_sep_arg1:
-            next = sep_arg1(c, p);
-            break;
+    	case request_verb_simple:
+    		next = verb_simpl(c, p);
+    		break;
+    	case request_verb_mult:
+    		next = verb_mult(c, p);
+    		break;
         case request_arg1:
             next = arg1(c, p);
             break;
@@ -82,7 +132,7 @@ request_parser_feed (struct request_parser* p, const uint8_t c) {
                     next = request_done;
                     break;
                 default:
-                    next = request_verb;
+                    next = request_error;
                     break;
             }
             break;

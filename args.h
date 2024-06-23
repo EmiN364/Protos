@@ -1,28 +1,20 @@
 #ifndef ARGS_H_kFlmYm1tW9p5npzDr2opQJ9jM8
 #define ARGS_H_kFlmYm1tW9p5npzDr2opQJ9jM8
 
-#include <stdbool.h>
-
 #define MAX_USERS 10
 
-struct users {
-    char *name;
-    char *pass;
-};
+#include <stdbool.h>
 
 struct smtpargs {
 
     char *         mail_dir;
 
-    char           *smtp_addr;
-    unsigned short smtp_port;
-
-    char *          mng_addr;
+    unsigned short  smtp_port;
     unsigned short  mng_port;
 
-    bool 		    transform_enabled;
+    char * 		   transformations;
 
-    struct users    users[MAX_USERS];
+    char *         pass;
 };
 
 /**
