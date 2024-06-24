@@ -47,7 +47,7 @@ int main(const int argc, char **argv) {
 
 	struct sockaddr_in6 addr;
 	memset(&addr, 0, sizeof(addr));
-	addr.sin6_family = AF_INET6; // TODO: Support IPv6
+	addr.sin6_family = AF_INET6;
 	addr.sin6_addr = in6addr_any;
 	addr.sin6_port = htons(args.smtp_port);
 
@@ -61,7 +61,7 @@ int main(const int argc, char **argv) {
 
 	// man 7 ip. no importa reportar nada si falla.
 	setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
-	int off = 0;
+	const int off = 0;
 	setsockopt(server, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
 
 	if (bind(server, (struct sockaddr *) &addr, sizeof(addr)) < 0) {

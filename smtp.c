@@ -43,9 +43,10 @@ struct smtp {
 	bool is_data;
 
 	char mailfrom[255];
-
-	struct selector_key file;
 	char rcpt[255]; // TODO: Change to list
+
+	int file_fd;
+	int socket_fd;
 };
 
 struct status {
@@ -132,7 +133,27 @@ static void data_read_close(const unsigned state, struct selector_key *key) {
 	data_close(&ATTACHMENT(key)->data_parser);
 }
 
-static enum smtpstate request_process(struct smtp * state) {
+static void file_write(struct selector_key *key) {
+	struct state_machine *stm = &ATTACHMENT(key)->stm;
+	const enum smtpstate st = stm_handler_write(stm, key);
+
+	/*if (ERROR == st || DONE == st) {
+		smtp_done(key);
+	} else if (REQUEST_READ == st || DATA_READ == st) {
+		buffer *rb = &ATTACHMENT(key)->read_buffer;
+		if (buffer_can_read(rb)) {
+			smtp_read(key); // Si hay para leer en el buffer, sigo leyendo sin bloquearme
+		}
+	}*/
+}
+
+static const struct fd_handler file_handler = {
+	.handle_read = NULL,
+	.handle_write = file_write,
+	.handle_close = NULL,
+};
+
+static enum smtpstate request_process(struct selector_key *key, struct smtp * state) {
 
 	char * response;
 	enum smtpstate res_state = RESPONSE_WRITE;
@@ -142,11 +163,23 @@ static enum smtpstate request_process(struct smtp * state) {
 			response = "503 5.5.1 Error: need RCPT command\r\n";
 		} else {
 			response = "354 End data with <CR><LF>.<CR><LF>\r\n";
+
+			state->is_data = true;
+
+			// Init new file
+			const int file = open(state->rcpt, O_WRONLY | O_APPEND | O_CREAT, 0644);
+			if (file < 0)
+				return ERROR;
+
+			state->file_fd = file;
+			state->socket_fd = key->fd;
+			buffer_init(&state->file_buffer, N(state->raw_buff_file), state->raw_buff_file);
+
+			if (SELECTOR_SUCCESS != selector_register(key->s, file, &file_handler, OP_NOOP, state))
+				return ERROR;
+
 		}
-		state->is_data = true;
-
-		// Init new file
-
+		res_state = RESPONSE_WRITE;
 	} else if (strcasecmp(state->request_parser.request->verb, "mail from") == 0) {
 		// TODO: Check arg1
 		strcpy(state->mailfrom, state->request_parser.request->arg1);
@@ -189,7 +222,7 @@ static unsigned int request_read_posta(struct selector_key *key, struct smtp *st
 	if (request_is_done(st, 0)) {
 		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
 			// Procesamiento
-			ret = request_process(state); // tengo todo completo
+			ret = request_process(key, state); // tengo todo completo
 		} else {
 			ret = ERROR;
 		}
@@ -229,30 +262,17 @@ static unsigned int data_read_posta(struct selector_key *key, struct smtp *state
 	while(buffer_can_read(b)) {
 		const uint8_t c = buffer_read(b);
 		st = data_parser_feed(&state->data_parser, c);
+		buffer_write(&state->file_buffer, c);
 		if(data_is_done(st)) {
 			break;
 		}
 	}
 
-	const int file = open("mail.txt", O_WRONLY | O_APPEND | O_CREAT, 0644);
-	if (file == -1) {
-		return ERROR;
-	}
-
-	buffer *wb = &state->file_buffer;
-	size_t count;
-	const uint8_t *ptr = buffer_write_ptr(wb, &count);
-	const ssize_t n = write(file, ptr, count);
-
-	if (n >= 0)
-		buffer_write_adv(wb, n);
-
-	if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)) {
-		if (state->data_parser.state == data_done) {
-			ret = REQUEST_READ;
-		} else {
-			ret = DATA_READ;
-		}
+	if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_NOOP)) {
+		if (SELECTOR_SUCCESS == selector_set_interest(key->s, state->file_fd, OP_WRITE))
+			ret = DATA_WRITE;
+		else
+			ret = ERROR;
 	} else {
 		ret = ERROR;
 	}
@@ -308,7 +328,6 @@ static unsigned response_write(struct selector_key *key) {
 	if (n >= 0) {
 		buffer_read_adv(wb, n);
 		if (!buffer_can_read(wb)) {
-			// TODO: Ver si voy para data o request
 			if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)) {
 				ret = ATTACHMENT(key)->is_data ? DATA_READ : REQUEST_READ;
 			} else {
@@ -323,7 +342,48 @@ static unsigned response_write(struct selector_key *key) {
 }
 
 static unsigned data_write(struct selector_key *key) {
-	return REQUEST_READ;
+	unsigned ret = DATA_WRITE;
+
+	size_t count;
+	buffer *wb = &ATTACHMENT(key)->file_buffer;
+	struct smtp *state = ATTACHMENT(key);
+
+	uint8_t *ptr = buffer_read_ptr(wb, &count);
+	ssize_t n = write(key->fd, ptr, count);
+
+	if (n >= 0) {
+		buffer_read_adv(wb, n);
+		if (!buffer_can_read(wb)) {
+			if (SELECTOR_SUCCESS != selector_set_interest_key(key, OP_NOOP))
+				ret = ERROR;
+			else {
+				if (state->data_parser.state == data_done) {
+					if (SELECTOR_SUCCESS != selector_set_interest(key->s, state->socket_fd, OP_WRITE))
+						ret = ERROR;
+					else {
+						state->is_data = false;
+
+						ptr = buffer_write_ptr(&state->write_buffer, &count);
+
+						// TODO: Check count with n (min(n,count))
+						strcpy((char *) ptr, "250 2.0.0 Ok: queued as 5E0AA44E8\n");
+						buffer_write_adv(&state->write_buffer, 35);
+
+						ret = RESPONSE_WRITE;
+					}
+				} else {
+					if (SELECTOR_SUCCESS != selector_set_interest(key->s, state->socket_fd, OP_READ))
+						ret = ERROR;
+					else
+						ret = DATA_READ;
+				}
+			}
+		}
+	} else {
+		ret = ERROR;
+	}
+
+	return ret;
 }
 
 
@@ -347,7 +407,7 @@ static const struct state_definition client_statbl[] = {
  	},
     {
     	 .state = DATA_WRITE,
-        .on_read_ready	   = data_write,
+        .on_write_ready	   = data_write,
      },
     {
 		.state = DONE,

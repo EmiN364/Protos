@@ -22,6 +22,15 @@ port(const char *s) {
      return (unsigned short)sl;
 }
 
+static const char *
+pass(const char *s) {
+	if (strlen(s) != 10) {
+		fprintf(stderr, "password should have 10 characters\n");
+		exit(1);
+	}
+	return s;
+}
+
 /*static void
 user(char *s, struct users *user) {
     char *p = strchr(s, ':');
@@ -49,7 +58,7 @@ usage(const char *progname) {
         "Usage: %s [OPTION]...\n"
         "\n"
         "   -h               Imprime la ayuda y termina.\n"
-        "   -p <SOCKS port>  Puerto entrante conexiones SMTP.\n"
+        "   -p <SMTP port>  Puerto entrante conexiones SMTP.\n"
         "   -P <conf port>   Puerto entrante conexiones configuracion\n"
         "   -u <pass>		 Contraseña de admin. Hasta 10.\n"
 		"   -T <program>     Prende las transformaciones.\n"
@@ -98,7 +107,7 @@ parse_args(const int argc, char **argv, struct smtpargs *args) {
                 args->mng_port   = port(optarg);
                 break;
             case 'u':
-                args->pass = optarg;
+                args->pass = (char *) pass(optarg);
                 break;
             case 'v':
                 version();
