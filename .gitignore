@@ -9,3 +9,5 @@ mail.txt
 mails/
 test.txt
 mng_client
+docker.sh
+Dockerfile
