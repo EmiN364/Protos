@@ -10,7 +10,7 @@
 
 extern void
 data_parser_init (struct data_parser* p) {
-    p->state = data_crlf;
+    p->state = data_crlf_start;
 	buffer_init(&p->output_buffer, N(p->raw_buffer), p->raw_buffer);
 }
 
@@ -20,34 +20,57 @@ data_parser_feed (struct data_parser* p, const uint8_t c) {
     enum data_state next;
 
     switch(p->state) {
-        case data_data:
-			if (c == '\r')
-				next = data_cr;
-			else {
-				buffer_write(&p->output_buffer, c);
-				next = data_data;
-			}
+    	case data_crlf_start:
+    		if (c == '.')
+    			next = data_crlfdot;
+    		else {
+    			buffer_write(&p->output_buffer, c);
+    			next = data_data;
+    		}
     		break;
-        case data_cr:
-			if (c == '\n')
-				next = data_crlf;
-			else {
-				buffer_write(&p->output_buffer, '\r');
-				buffer_write(&p->output_buffer, c);
-				next = data_data;
-			}
-            break;
-        case data_crlf:
-			if (c == '.')
-				next = data_crlfdot;
-			else {
+	    case data_data:
+	    	if (c == '\r')
+	    		next = data_cr;
+	    	else {
+	    		buffer_write(&p->output_buffer, c);
+	    		next = data_data;
+	    	}
+    	break;
+    	case data_cr:
+    		if (c == '\n')
+    			next = data_crlf;
+    		else {
+    			buffer_write(&p->output_buffer, '\r');
+    			buffer_write(&p->output_buffer, c);
+    			next = data_data;
+    		}
+    	break;
+    	case data_crlf:
+    		if (c == '.')
+    			next = data_crlfdot;
+    		else {
+    			buffer_write(&p->output_buffer, '\r');
+    			buffer_write(&p->output_buffer, '\n');
+    			buffer_write(&p->output_buffer, c);
+    			next = data_data;
+    		}
+    	break;
+    	case data_crlfdotcr:
+    		if (c == '\n') {
+    			buffer_write(&p->output_buffer, '\r');
+    			buffer_write(&p->output_buffer, '\n');
+    			buffer_write(&p->output_buffer, '\0');
+    			next = data_done;
+		    } else {
 				buffer_write(&p->output_buffer, '\r');
 				buffer_write(&p->output_buffer, '\n');
+				buffer_write(&p->output_buffer, '.');
+				buffer_write(&p->output_buffer, '\r');
 				buffer_write(&p->output_buffer, c);
 				next = data_data;
 			}
-            break;
-        case data_crlfdot:
+			break;
+		case data_crlfdot:
 			if (c == '\r')
 				next = data_crlfdotcr;
 			else {
@@ -58,19 +81,7 @@ data_parser_feed (struct data_parser* p, const uint8_t c) {
 				next = data_data;
 			}
             break;
-    	case data_crlfdotcr:
-			if (c == '\n')
-				next = data_done;
-			else {
-				buffer_write(&p->output_buffer, '\r');
-				buffer_write(&p->output_buffer, '\n');
-				buffer_write(&p->output_buffer, '.');
-				buffer_write(&p->output_buffer, '\r');
-				buffer_write(&p->output_buffer, c);
-				next = data_data;
-			}
-			break;
-        case data_done:
+		case data_done:
         default:
             next = data_done;
             break;

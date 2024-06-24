@@ -41,8 +41,8 @@ struct smtp {
 	struct data_parser data_parser;
 
 	/** buffers */
-	uint8_t raw_buff_read[BUFFER_LENGTH], raw_buff_write[BUFFER_LENGTH], raw_buff_file[BUFFER_LENGTH];
-	buffer read_buffer, write_buffer, file_buffer;
+	uint8_t raw_buff_read[BUFFER_LENGTH], raw_buff_write[BUFFER_LENGTH];
+	buffer read_buffer, write_buffer;
 
 	bool is_data;
 
@@ -128,12 +128,12 @@ static void request_read_close(const unsigned state, struct selector_key *key) {
 	request_close(&ATTACHMENT(key)->request_parser);
 }
 
-static void data_read_init(const unsigned state, struct selector_key *key) {
+static void data_read_init(struct selector_key *key) {
 	struct data_parser* p = &ATTACHMENT(key)->data_parser;
 	data_parser_init(p);
 }
 
-static void data_read_close(const unsigned state, struct selector_key *key) {
+static void data_read_close(struct selector_key *key) {
 	data_close(&ATTACHMENT(key)->data_parser);
 }
 
@@ -170,6 +170,8 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp * st
 
 			state->is_data = true;
 
+			data_read_init(key);
+
 			struct stat st = {0};
 
 			/*"mails/" + state->rcpt*/
@@ -193,13 +195,11 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp * st
 
 			state->file_fd = file;
 			state->socket_fd = key->fd;
-			buffer_init(&state->file_buffer, N(state->raw_buff_file), state->raw_buff_file);
 
 			if (SELECTOR_SUCCESS != selector_register(key->s, file, &file_handler, OP_NOOP, state))
 				return ERROR;
 
 		}
-		res_state = RESPONSE_WRITE;
 	} else if (strcasecmp(state->request_parser.request->verb, "mail from") == 0) {
 		// TODO: Check arg1
 		strcpy(state->mailfrom, state->request_parser.request->arg1);
@@ -282,7 +282,7 @@ static unsigned int data_read_posta(struct selector_key *key, struct smtp *state
 	while(buffer_can_read(b)) {
 		const uint8_t c = buffer_read(b);
 		st = data_parser_feed(&state->data_parser, c);
-		buffer_write(&state->file_buffer, c);
+		// buffer_write(&state->file_buffer, c);
 		if(data_is_done(st)) {
 			break;
 		}
@@ -365,7 +365,7 @@ static unsigned data_write(struct selector_key *key) {
 	unsigned ret = DATA_WRITE;
 
 	size_t count;
-	buffer *wb = &ATTACHMENT(key)->file_buffer;
+	buffer *wb = &ATTACHMENT(key)->data_parser.output_buffer;
 	struct smtp *state = ATTACHMENT(key);
 
 	uint8_t *ptr = buffer_read_ptr(wb, &count);
@@ -382,6 +382,10 @@ static unsigned data_write(struct selector_key *key) {
 						ret = ERROR;
 					else {
 						state->is_data = false;
+
+						close(state->file_fd);
+						state->file_fd = 0;
+						data_read_close(key);
 
 						ptr = buffer_write_ptr(&state->write_buffer, &count);
 
@@ -422,8 +426,8 @@ static const struct state_definition client_statbl[] = {
     },
     {
     	 .state = DATA_READ,
-     	.on_arrival       = data_read_init,
-        .on_departure     = data_read_close,
+     	/*.on_arrival       = data_read_init,
+        .on_departure     = data_read_close,*/
      	.on_read_ready	   = data_read,
  	},
     {
@@ -523,6 +527,11 @@ void smtp_passive_accept(struct selector_key *key) {
 	state->stm.states = client_statbl;
 	stm_init(&state->stm);
 
+	state->request_parser.request = &state->request;
+	request_parser_init(&state->request_parser);
+
+	data_parser_init(&state->data_parser);
+
 	buffer_init(&state->read_buffer, N(state->raw_buff_read), state->raw_buff_read);
 	buffer_init(&state->write_buffer, N(state->raw_buff_write), state->raw_buff_write);
 
@@ -531,11 +540,6 @@ void smtp_passive_accept(struct selector_key *key) {
 
 	memcpy(&state->raw_buff_write, greeting, len);
 	buffer_write_adv(&state->write_buffer, len);
-
-    state->request_parser.request = &state->request;
-    request_parser_init(&state->request_parser);
-
-	data_parser_init(&state->data_parser);
 
 	if (SELECTOR_SUCCESS != selector_register(key->s, client, &smtp_handler, OP_WRITE, state)) {
 		goto fail;

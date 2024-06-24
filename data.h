@@ -21,7 +21,8 @@ enum data_state {
 	// Lei un LF
 	// '.' -> data_crlfdot, nop
 	//  *   -> data_data, write('\r\n' + c)
-	data_crlf, // INICIAL
+	data_crlf,
+	data_crlf_start, // INICIAL
 
 	// Lei un .
 	// '\r' -> data_crlfdotcr, nop
