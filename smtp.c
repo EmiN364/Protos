@@ -16,9 +16,13 @@
 #include <strings.h>
 #include <time.h>
 #include <unistd.h>  // close
+#include <sys/stat.h>
 
 #define N(x) (sizeof(x) / sizeof((x)[0]))
 #define MIN(x,y) (x < y ? x : y)
+
+#define BUFFER_LENGTH 2048
+// TODO: Check this
 
 /** obtiene el struct (smtp *) desde la llave de selección  */
 #define ATTACHMENT(key) ((struct smtp *) (key)->data)
@@ -37,7 +41,7 @@ struct smtp {
 	struct data_parser data_parser;
 
 	/** buffers */
-	uint8_t raw_buff_read[2048], raw_buff_write[2048], raw_buff_file[2048];  // TODO: Fix this
+	uint8_t raw_buff_read[BUFFER_LENGTH], raw_buff_write[BUFFER_LENGTH], raw_buff_file[BUFFER_LENGTH];
 	buffer read_buffer, write_buffer, file_buffer;
 
 	bool is_data;
@@ -166,8 +170,24 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp * st
 
 			state->is_data = true;
 
+			struct stat st = {0};
+
+			/*"mails/" + state->rcpt*/
+			char file_name[100] = "mails/";
+			if (strlen(state->rcpt) > 90)
+				return ERROR;
+
+			strcat(file_name, state->rcpt);
+
+			if (stat("mails", &st) == -1) {
+				if (mkdir("mails", 0755) == -1) {
+					perror("Error creating directory");
+					return ERROR;
+				}
+			}
+
 			// Init new file
-			const int file = open(state->rcpt, O_WRONLY | O_APPEND | O_CREAT, 0644);
+			const int file = open(file_name, O_WRONLY | O_APPEND | O_CREAT, 0644);
 			if (file < 0)
 				return ERROR;
 
@@ -208,9 +228,9 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp * st
 	size_t count;
 	uint8_t *ptr = buffer_write_ptr(&state->write_buffer, &count);
 
-	// TODO: Check count with n (min(n,count))
-	strcpy((char *) ptr, response);
-	buffer_write_adv(&state->write_buffer, strlen(response));
+	const int len = MIN(count, strlen(response) + 1); // TODO: Check that all the response is in buffer
+	strncpy((char *) ptr, response, len);
+	buffer_write_adv(&state->write_buffer, len);
 
 	return res_state;
 }
@@ -365,9 +385,10 @@ static unsigned data_write(struct selector_key *key) {
 
 						ptr = buffer_write_ptr(&state->write_buffer, &count);
 
-						// TODO: Check count with n (min(n,count))
-						strcpy((char *) ptr, "250 2.0.0 Ok: queued as 5E0AA44E8\n");
-						buffer_write_adv(&state->write_buffer, 35);
+						// TODO: Check that all the response is in buffer, and that 35 is correct or it should be 36
+						const int len = MIN(36, count);
+						strncpy((char *) ptr, "250 2.0.0 Ok: queued as 5E0AA44E8\n", len);
+						buffer_write_adv(&state->write_buffer, len);
 
 						ret = RESPONSE_WRITE;
 					}
