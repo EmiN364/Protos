@@ -513,14 +513,12 @@ static unsigned response_write(struct selector_key *key) {
 	return ret;
 }
 
-void renameRcptFile(struct smtp * state) {
+void rename_rcpt_file(struct smtp * state) {
 	int fd_from = open(state->file_full_name, O_RDONLY);
 	if (fd_from < 0) {
 		perror("Failed to open fd_from");
 		exit(1);
 	}
-
-	wait(NULL);
 
 	struct stat fileinfo = {0};
 	fstat(fd_from, &fileinfo);
@@ -584,7 +582,7 @@ static unsigned data_write(struct selector_key *key) {
 
 						close(state->file_fd);
 
-						renameRcptFile(state);
+						rename_rcpt_file(state);
 
 						if (SELECTOR_SUCCESS != selector_unregister_fd(key->s, state->file_fd))
 							return ERROR;
