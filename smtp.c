@@ -514,26 +514,41 @@ static unsigned response_write(struct selector_key *key) {
 }
 
 void renameRcptFile(struct smtp * state) {
+	int fd_from = open(state->file_full_name, O_RDONLY);
+	if (fd_from < 0) {
+		perror("Failed to open fd_from");
+		exit(1);
+	}
+
+	wait(NULL);
+
+	struct stat fileinfo = {0};
+	fstat(fd_from, &fileinfo);
+
 	rcpt *current = state->rcpt_list->first;
 	char new_file_name[MAX_PATH];
 	sprintf(new_file_name, "%s/%s/new/%s", BASE_DIR, current->rcpt, state->file_name);
-	rename(state->file_full_name, new_file_name);
+
+	if (rename(state->file_full_name, new_file_name) < 0) {
+		perror("Error while renaming file");
+		exit(1);
+	}
 	current = current->next;
 
 	if (current != NULL) {
-		int fd_from = open(new_file_name, O_RDONLY);
+
 		*new_file_name = '\0';
 
 		while (current != NULL) {
 			sprintf(new_file_name, "%s/%s/new/%s", BASE_DIR, current->rcpt, state->file_name);
 			int fd_to = open(new_file_name, O_WRONLY | O_CREAT, 0666);
-			if (fd_to < 0)
+			if (fd_to < 0) {
+				perror("Failed to open fd_to");
 				exit(1);
+			}
 
 			off_t bytesCopied = 0;
-			struct stat fileinfo = {0};
-			fstat(fd_from, &fileinfo);
-			if (sendfile(fd_to, fd_from, &bytesCopied, fileinfo.st_size) < 0) {
+			if (sendfile(fd_to, fd_from, &bytesCopied, fileinfo.st_size) <= 0) {
 				perror("Error in sendfile");
 				exit(1);
 			}
@@ -568,7 +583,6 @@ static unsigned data_write(struct selector_key *key) {
 						state->is_data = false;
 
 						close(state->file_fd);
-						// wait(NULL);
 
 						renameRcptFile(state);
 
@@ -576,11 +590,8 @@ static unsigned data_write(struct selector_key *key) {
 							return ERROR;
 
 						state->file_fd = 0;
-						data_read_close(key);
 
 						ptr = buffer_write_ptr(&state->write_buffer, &count);
-
-						// TODO: Check that all the response is in buffer
 						char id[10];
 						generate_id(id);
 						char buffer[50];
@@ -598,7 +609,6 @@ static unsigned data_write(struct selector_key *key) {
 						concat_date(addrBuffer);
 						fprintf(state->log_file, "Mail Sent: %s  MAIL FROM: %s\n", addrBuffer, state->mailfrom);
 
-						state->mailfrom[0] = '\0';
 						for (rcpt *current = state->rcpt_list->first; current != NULL;) {
 							fprintf(state->log_file, "  RCPT TO: %s\n", current->rcpt);
 							rcpt *next = current->next;
@@ -612,6 +622,7 @@ static unsigned data_write(struct selector_key *key) {
 						state->rcpt_list->first = NULL;
 						state->file_name[0] = '\0';
 						state->file_full_name[0] = '\0';
+						state->mailfrom[0] = '\0';
 
 						ret = RESPONSE_WRITE;
 					}
