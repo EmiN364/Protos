@@ -8,30 +8,27 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <time.h>
-// #include "logger.h"
-// #include "util.h"
+#include "mng.h"
 
 int sockAddrsEqual(const struct sockaddr *addr1, const struct sockaddr *addr2) {
 	if (addr1 == NULL || addr2 == NULL)
 		return addr1 == addr2;
-	else if (addr1->sa_family != addr2->sa_family)
+	if (addr1->sa_family != addr2->sa_family)
 		return 0;
-	else if (addr1->sa_family == AF_INET) {
+	if (addr1->sa_family == AF_INET) {
 		struct sockaddr_in *ipv4Addr1 = (struct sockaddr_in *) addr1;
 		struct sockaddr_in *ipv4Addr2 = (struct sockaddr_in *) addr2;
 		return ipv4Addr1->sin_addr.s_addr == ipv4Addr2->sin_addr.s_addr && ipv4Addr1->sin_port == ipv4Addr2->sin_port;
-	} else if (addr1->sa_family == AF_INET6) {
+	}
+	if (addr1->sa_family == AF_INET6) {
 		struct sockaddr_in6 *ipv6Addr1 = (struct sockaddr_in6 *) addr1;
 		struct sockaddr_in6 *ipv6Addr2 = (struct sockaddr_in6 *) addr2;
 		return memcmp(&ipv6Addr1->sin6_addr, &ipv6Addr2->sin6_addr, sizeof(struct in6_addr)) == 0 &&
 		       ipv6Addr1->sin6_port == ipv6Addr2->sin6_port;
-	} else
-		return 0;
+	}
+	return 0;
 }
 
-/* En esta version no iteramos por las posibles IPs del servidor Echo, como se hizo para TCP
-** Realizar las modificaciones necesarias para que intente por todas las IPs
-*/
 int udpClientSocket(const char *host, const char *service, struct addrinfo **servAddr) {
 	// Pedimos solamente para UDP, pero puede ser IPv4 o IPv6
 	struct addrinfo addrCriteria;
@@ -44,10 +41,8 @@ int udpClientSocket(const char *host, const char *service, struct addrinfo **ser
 	int rtnVal = getaddrinfo(host, service, &addrCriteria, servAddr);
 	if (rtnVal != 0) {
 		fprintf(stderr, "getaddrinfo() failed: %s\n", gai_strerror(rtnVal));
-		exit(1);
+		exit(ERROR_STATUS);
 	}
-
-	// Como no es orientado a conexion y no nos intentamos conectar, confiamos en el primer addrinfo
 
 	// Socket cliente UDP
 	return socket(
@@ -57,7 +52,7 @@ int udpClientSocket(const char *host, const char *service, struct addrinfo **ser
 int main(int argc, char *argv[]) {
 	if (argc != 5) {
 		fprintf(stderr, "Usage: %s <Server Address/Name> <Auth> <Server Port/Service> <Command>\n", argv[0]);
-		exit(1);
+		exit(ERROR_STATUS);
 	}
 
 	// A diferencia de TCP, guardamos a que IP/puerto se envia la data, para verificar
@@ -70,15 +65,15 @@ int main(int argc, char *argv[]) {
 	ssize_t passwordLen = strlen(password);
 	if (passwordLen != 8) {
 		fprintf(stderr, "Password must be 8 characters long\n");
-		exit(1);
+		exit(ERROR_STATUS);
 	}
 
 	char *servPort = argv[3];
 
 	char *command = argv[4];
-	if (strlen(command) != 1 || command[0] < '0' || command[0] > '6') {
-		fprintf(stderr, "Command must be between 0 and 6\n");
-		exit(1);
+	if (strlen(command) != 1 || command[0] < '0' || command[0] > (MAX_COMMAND + '0')) {
+		fprintf(stderr, "Command must be between 0 and %d\n", MAX_COMMAND);
+		exit(ERROR_STATUS);
 	}
 
 	errno = 0;
@@ -89,25 +84,25 @@ int main(int argc, char *argv[]) {
 
 	srand(time(NULL));   // Initialization, should only be called once.
 
-	uint8_t datagram[14];
+	uint8_t datagram[DATAGRAM_LENGTH];
 
-	datagram[0] = 0xFF;
-	datagram[1] = 0xFE;
-	datagram[2] = 0x00;
-	datagram[3] = rand();  // Random
-	datagram[4] = rand();  // Random
-	memcpy(datagram + 5, password, passwordLen);
-	datagram[13] = command[0] - '0';  // comando
+	datagram[i_PROT_SIGN_1] = PROTOCOL_SIGN_1;
+	datagram[i_PROT_SIGN_2] = PROTOCOL_SIGN_2;
+	datagram[i_VERSION] = PROTOCOL_VERSION;
+	datagram[i_IDENTIF_1] = rand();  // Random
+	datagram[i_IDENTIF_2] = rand();  // Random
+	memcpy(datagram + i_AUTH, password, passwordLen);
+	datagram[i_COMMAND] = command[0] - '0';  // comando
 
 	// Enviamos el string, puede fallar si la length es mayor a la max de udp
 	ssize_t numBytes = sendto(sock, datagram, sizeof(datagram), 0, servAddr->ai_addr, servAddr->ai_addrlen);
 	if (numBytes < 0) {
 		fprintf(stderr, "sendto() failed: %s\n", strerror(errno));
-		exit(1);
+		exit(ERROR_STATUS);
 	}
 	if (numBytes != sizeof(datagram)) {
 		fprintf(stderr, "sendto() error, sent unexpected number of bytes\n");
-		exit(1);
+		exit(ERROR_STATUS);
 	}
 
 	// Guardamos la direccion/puerto de respuesta para verificar que coincida con el servidor
@@ -128,7 +123,7 @@ int main(int argc, char *argv[]) {
 	    recvfrom(sock, response_datagram, sizeof(response_datagram), 0, (struct sockaddr *) &fromAddr, &fromAddrLen);
 	if (numBytes < 0) {
 		fprintf(stderr, "recvfrom() failed: %s\n", strerror(errno));
-		exit(1);
+		exit(ERROR_STATUS);
 	} else {
 		if (numBytes != sizeof(response_datagram))
 			fprintf(stderr,
@@ -141,42 +136,59 @@ int main(int argc, char *argv[]) {
 			fprintf(stderr, "recvfrom() received a packet from other source\n");
 	}
 
-	if (response_datagram[0] != 0xFF || response_datagram[1] != 0xFE) {
+	if (response_datagram[i_PROT_SIGN_1] != PROTOCOL_SIGN_1 || response_datagram[i_PROT_SIGN_2] != PROTOCOL_SIGN_2) {
 		fprintf(stderr, "Invalid protocol signature\n");
-		exit(1);
+		exit(ERROR_STATUS);
 	}
 
-	if (response_datagram[2] != 0x00) {
+	if (response_datagram[i_VERSION] != PROTOCOL_VERSION) {
 		fprintf(stderr, "Invalid protocol version\n");
-		exit(1);
+		exit(ERROR_STATUS);
 	}
 
-	uint16_t identifier = (response_datagram[3] << 8) | response_datagram[4];
-	uint8_t status = response_datagram[5];
+	uint16_t identifier = (response_datagram[i_IDENTIF_1] << 8) | response_datagram[i_IDENTIF_2];
+	uint8_t status = response_datagram[i_STATUS];
 
-	if (status == 0x00) {
+	if (status == STATUS_OK) {
 		uint32_t count = 0;
-		memcpy(&count, response_datagram + 6, sizeof(uint32_t));
+		memcpy(&count, response_datagram + i_RES_OFFSET, sizeof(uint32_t));
 		count = ntohl(count);
+
 		printf("Identifier: %d\n", identifier);
-		printf("Count: %u\n", count);
-		printf("Success: %s\n", response_datagram[6] == 0x00 ? "TRUE" : "FALSE");
+
+		if (datagram[i_COMMAND] == COM_HISTORIC)
+			printf("Historic connections: %u\n", count);
+		else if (datagram[i_COMMAND] == COM_CONCURRENT)
+			printf("Concurrent connections: %u\n", count);
+		else if (datagram[i_COMMAND] == COM_BYTES)
+			printf("Bytes transfered: %u\n", count);
+		else if (datagram[i_COMMAND] == COM_MAILS)
+			printf("Mails sent: %u\n", count);
+		else if (datagram[i_COMMAND] == COM_TRANSFORM)
+			printf("Transformations: %s\n", response_datagram[6] == 0x00 ? "enabled" : "disabled");
+		else if (datagram[i_COMMAND] == COM_ENABLE)
+			printf("Transformations enabled\n");
+		else if (datagram[i_COMMAND] == COM_DISABLE)
+			printf("Transformations disabled\n");
 	} else {
 		fprintf(stderr, "Error: ");
 		switch (status) {
-			case 0x01:
+			case AUTH_ERROR:
 				fprintf(stderr, "Auth failed\n");
 				break;
-			case 0x02:
+			case INVALID_VERSION:
 				fprintf(stderr, "Invalid version\n");
 				break;
-			case 0x03:
+			case INVALID_COMMAND:
 				fprintf(stderr, "Invalid command\n");
 				break;
-			case 0x04:
+			case INVALID_REQUEST:
 				fprintf(stderr, "Invalid request (length)\n");
 				break;
-			case 0x05:
+			case TRANSF_NOT_DEFINED:
+				fprintf(stderr, "Transformation program not defined\n");
+				break;
+			case UNEXPECTED_ERROR:
 				fprintf(stderr, "Unexpected error\n");
 				break;
 			default:
