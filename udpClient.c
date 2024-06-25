@@ -52,6 +52,17 @@ int udpClientSocket(const char *host, const char *service, struct addrinfo **ser
 int main(int argc, char *argv[]) {
 	if (argc != 5) {
 		fprintf(stderr, "Usage: %s <Server Address/Name> <Auth> <Server Port/Service> <Command>\n", argv[0]);
+
+		// List of commands
+		fprintf(stderr, "Commands:\n");
+		fprintf(stderr, "\t0: Get historic connections\n");
+		fprintf(stderr, "\t1: Get concurrent connections\n");
+		fprintf(stderr, "\t2: Get bytes transfered\n");
+		fprintf(stderr, "\t3: Get mails sent\n");
+		fprintf(stderr, "\t4: Get transformations status\n");
+		fprintf(stderr, "\t5: Enable transformations\n");
+		fprintf(stderr, "\t6: Disable transformations\n");
+
 		exit(ERROR_STATUS);
 	}
 

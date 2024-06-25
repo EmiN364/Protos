@@ -41,9 +41,9 @@ static void usage(const char *progname) {
 	        "Usage: %s [OPTION]...\n"
 	        "\n"
 	        "   -h               Imprime la ayuda y termina.\n"
-	        "   -p <SMTP port>  Puerto entrante conexiones SMTP.\n"
+	        "   -p <SMTP port>   Puerto entrante conexiones SMTP.\n"
 	        "   -P <conf port>   Puerto entrante conexiones configuracion\n"
-	        "   -u <pass>		 Contraseña de admin. Hasta 10.\n"
+	        "   -u <pass>		 Contraseña de admin de 8 caracteres.\n"
 	        "   -T <program>     Prende las transformaciones.\n"
 	        "   -v               Imprime información sobre la versión versión y termina.\n"
 	        "\n\n",

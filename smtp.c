@@ -16,7 +16,6 @@
 #include <string.h>  // memset
 #include <strings.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <sys/sendfile.h>
 #include <time.h>
 #include <unistd.h>  // close
@@ -554,8 +553,8 @@ void rename_rcpt_file(struct smtp * state) {
 			close(fd_to);
 			current = current->next;
 		}
-		close(fd_from);
 	}
+	close(fd_from);
 }
 
 static unsigned data_write(struct selector_key *key) {
