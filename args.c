@@ -7,6 +7,8 @@
 
 #include "args.h"
 
+#define PASS_LENGTH 8
+
 static unsigned short
 port(const char *s) {
      char *end     = 0;
@@ -24,8 +26,8 @@ port(const char *s) {
 
 static const char *
 pass(const char *s) {
-	if (strlen(s) != 10) {
-		fprintf(stderr, "password should have 10 characters\n");
+	if (strlen(s) != PASS_LENGTH) {
+		fprintf(stderr, "password should have 8 characters\n");
 		exit(1);
 	}
 	return s;
@@ -73,8 +75,8 @@ parse_args(const int argc, char **argv, struct smtpargs *args) {
     memset(args, 0, sizeof(*args)); // sobre todo para setear en null los punteros de users
 
     args->smtp_port = 2525;
-
-    args->mng_port   = 2626;
+    args->mng_port  = 2626;
+	args->pass 		= "secretpa";
 
     int c;
 
