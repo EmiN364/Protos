@@ -103,7 +103,7 @@ void mng_passive_accept(struct selector_key *key) {
 		return;
 	}
 
-	if (datagram[13] > 0x05) {
+	if (datagram[13] > 0x06) {
 		sendError(key->fd, INVALID_COMMAND, (struct sockaddr *) &clntAddr, sizeof(clntAddr), ids);
 		return;
 	}
@@ -124,10 +124,10 @@ void mng_passive_accept(struct selector_key *key) {
 	 * La rta es un booleando (1 byte) con el resultado de la operación
 	 * 0x00 = TRUE  0x01 = FALSE
 	 */
+	struct status * stats = get_status();
 
 	if (datagram[13] == 0x00 || datagram[13] == 0x01 || datagram[13] == 0x02  || datagram[13] == 0x03) {
 
-		struct status * stats = get_status();
 		uint32_t value = 0;
 
 		if (datagram[13] == 0x00)
@@ -144,7 +144,15 @@ void mng_passive_accept(struct selector_key *key) {
 		memcpy(response_datagram + 6, &value, sizeof(value));
 
 	} else if (datagram[13] == 0x04 || datagram[13] == 0x05 || datagram[13] == 0x06) {
-		response_datagram[6] = 0x00; // TODO
+		if (datagram[13] == 0x04) {
+			response_datagram[6] = stats->transformations ? 0x00 : 0x01;
+		} else if (datagram[13] == 0x05) {
+			stats->transformations = true;
+			response_datagram[6] = 0x00;
+		} else if (datagram[13] == 0x06) {
+			stats->transformations = false;
+			response_datagram[6] = 0x00;
+		}
 	}
 
 	// Send the response back to the client

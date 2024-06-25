@@ -39,6 +39,7 @@ int main(const int argc, char **argv) {
 	struct smtpargs args;
 
 	parse_args(argc, argv, &args);
+	init_status(args.transformations);
 
 	srand(time(NULL));
 

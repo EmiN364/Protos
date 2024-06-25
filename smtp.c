@@ -551,6 +551,10 @@ struct status *get_status() {
 	return &global_status;
 }
 
+void init_status(char * program) {
+	global_status.program = program;
+	global_status.transformations = program != NULL ? true : false;
+}
 
 /** definición de handlers para cada estado */
 static const struct state_definition client_statbl[] = {
@@ -688,8 +692,6 @@ void smtp_passive_accept(struct selector_key *key) {
 	global_status.bytes_transfered += len;
 	global_status.historic_connections += 1;
 	global_status.concurrent_connections += 1;
-	global_status.program = (char *) key->data;
-	global_status.transformations = key->data != NULL ? true : false;
 
 	const selector_status ss = selector_register(key->s, client, &smtp_handler, OP_WRITE, state);
 

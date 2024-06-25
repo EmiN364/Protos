@@ -13,4 +13,6 @@ void smtp_passive_accept(struct selector_key *key);
 
 struct status * get_status();
 
+void init_status(char * program);
+
 #endif //SMTP_H
