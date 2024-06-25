@@ -14,13 +14,15 @@
 #include <stdlib.h>  // malloc
 #include <string.h>  // memset
 #include <strings.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>  // close
 #include <sys/stat.h>
 
-#define N(x) (sizeof(x) / sizeof((x)[0]))
-#define MIN(x,y) (x < y ? x : y)
+#define N(x)      (sizeof(x) / sizeof((x)[0]))
+#define MIN(x, y) (x < y ? x : y)
 
+#define BASE_DIR "mails"
 #define BUFFER_LENGTH 2048
 // TODO: Check this
 
@@ -118,7 +120,7 @@ enum smtpstate {
 };
 
 static void request_read_init(const unsigned state, struct selector_key *key) {
-	struct request_parser* p = &ATTACHMENT(key)->request_parser;
+	struct request_parser *p = &ATTACHMENT(key)->request_parser;
 	p->request = &ATTACHMENT(key)->request;
 	request_parser_init(p);
 }
@@ -128,7 +130,7 @@ static void request_read_close(const unsigned state, struct selector_key *key) {
 }
 
 static void data_read_init(struct selector_key *key) {
-	struct data_parser* p = &ATTACHMENT(key)->data_parser;
+	struct data_parser *p = &ATTACHMENT(key)->data_parser;
 	data_parser_init(p);
 }
 
@@ -141,138 +143,13 @@ static void file_write(struct selector_key *key) {
 	const enum smtpstate st = stm_handler_write(stm, key);
 
 	/*if (ERROR == st || DONE == st) {
-		smtp_done(key);
+	    smtp_done(key);
 	} else if (REQUEST_READ == st || DATA_READ == st) {
-		buffer *rb = &ATTACHMENT(key)->read_buffer;
-		if (buffer_can_read(rb)) {
-			smtp_read(key); // Si hay para leer en el buffer, sigo leyendo sin bloquearme
-		}
+	    buffer *rb = &ATTACHMENT(key)->read_buffer;
+	    if (buffer_can_read(rb)) {
+	        smtp_read(key); // Si hay para leer en el buffer, sigo leyendo sin bloquearme
+	    }
 	}*/
-}
-
-#define BASE_DIR "mails"
-
-int create_directory(const char *path) {
-	struct stat st = {0};
-	if (stat(path, &st) == -1) {
-		if (mkdir(path, 0755) != 0) {
-			perror("mkdir failed");
-			return -1;
-		}
-	}
-	return 0;
-}
-
-int build_mail_dir(const char *user) {
-	char user_dir[100];
-	char cur_dir[110];
-	char new_dir[110];
-	char tmp_dir[110];
-
-	// Create base directory
-	if (create_directory(BASE_DIR) != 0) {
-		return -1;
-	}
-
-	if (strlen(user) > 80)
-		return -1;
-
-	// Construct user directory paths
-	snprintf(user_dir, sizeof(user_dir), "%s/%s", BASE_DIR, user);
-	snprintf(cur_dir, sizeof(cur_dir), "%s/cur", user_dir);
-	snprintf(new_dir, sizeof(new_dir), "%s/new", user_dir);
-	snprintf(tmp_dir, sizeof(tmp_dir), "%s/tmp", user_dir);
-
-	// Create directories
-	if (create_directory(user_dir) != 0) {
-		return -1;
-	}
-	if (create_directory(cur_dir) != 0) {
-		return -1;
-	}
-	if (create_directory(new_dir) != 0) {
-		return -1;
-	}
-	if (create_directory(tmp_dir) != 0) {
-		return -1;
-	}
-
-	return 0;
-}
-
-void generate_id(char * buffer) {
-	const char caracteres[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-	const int num_caracteres = sizeof(caracteres) - 1;
-
-	for (int i = 0; i < 9; i++) {
-		buffer[i] = caracteres[rand() % num_caracteres];
-	}
-	buffer[9] = '\0'; // Asegurarse de que la cadena termine en '\0'
-}
-
-static int is_valid_email(const char *email, bool is_mail_from) {
-	int at_index = -1;
-	int len = strlen(email);
-
-	// Buscar la posición del '@'
-	for (int i = 0; i < len; ++i) {
-		if (email[i] == '@') {
-			at_index = i;
-			break;
-		}
-	}
-
-	// si el @ está al inicio o al final, no es válido
-	if (at_index == 0 || at_index == len - 1) {
-		return 0;
-	}
-
-	//si el @ no está presente, puede ser valido el usuario
-	if (at_index == -1) {
-		char first_char = email[0];
-		if (!((first_char >= 'a' && first_char <= 'z') || (first_char >= 'A' && first_char <= 'Z'))) {
-			return 0; // El primer carácter del usuario no es una letra
-		}
-
-		for (size_t i = 1; i < strlen(email); ++i) {
-			char ch = email[i];
-			if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-				  (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-')) {
-				return 0; // Caracter no válido en el usuario
-			}
-		}
-		return at_index; // Es válido
-	}
-
-	if (is_mail_from == false) {
-		// Verificar que el dominio sea "pdc.com"
-		const char *expected_domain = "pdc.com";
-		int domain_length = strlen(expected_domain);
-		int domain_index = at_index + 1; // Índice donde comienza el dominio
-
-		for (int i = 0; i < domain_length; ++i) {
-			if (email[domain_index + i] != expected_domain[i] &&
-				email[domain_index + i] != expected_domain[i] - 32) {
-				return 0; // Caracteres del dominio no coinciden (considerando mayúsculas y minúsculas)
-			}
-		}
-	}
-
-	// Verificar que el usuario cumpla con las reglas: ^[a-zA-Z][a-zA-Z0-9._-]*@
-	char first_char = email[0];
-	if (!((first_char >= 'a' && first_char <= 'z') || (first_char >= 'A' && first_char <= 'Z'))) {
-		return 0; // El primer carácter del usuario no es una letra
-	}
-
-	for (int i = 1; i < at_index; ++i) {
-		char ch = email[i];
-		if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-			  (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-')) {
-			return 0; // Caracter no válido en el usuario
-			  }
-	}
-
-	return at_index; // Es válido
 }
 
 static int get_response(struct smtp *state, char *arg, bool is_mail_from) {
@@ -323,9 +200,8 @@ static const struct fd_handler file_handler = {
 	.handle_close = NULL,
 };
 
-static enum smtpstate request_process(struct selector_key *key, struct smtp * state) {
-
-	char * response;
+static enum smtpstate request_process(struct selector_key *key, struct smtp *state) {
+	char *response;
 	enum smtpstate res_state = RESPONSE_WRITE;
 
 	if (strcasecmp(state->request_parser.request->verb, "data") == 0) {
@@ -364,11 +240,11 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp * st
 			response = "250 2.1.0 Ok\r\n";
 
 			char *arg = state->request_parser.request->arg1;
-			if (strchr(arg,'<') && strchr(arg,'>')) {
+			if (strchr(arg, '<') && strchr(arg, '>')) {
 				char content[strlen(arg)];
-				const char* str = strchr(arg,'<') + 1;
+				const char *str = strchr(arg, '<') + 1;
 				memcpy(content, str, strlen(str));
-				char *ptr = strchr(content,'>');
+				char *ptr = strchr(content, '>');
 				if (ptr == NULL) {
 					response = "501 5.1.7 Bad recipient address syntax\r\n";
 				} else {
@@ -390,11 +266,11 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp * st
 			response = "250 2.1.0 Ok\r\n";
 
 			char *arg = state->request_parser.request->arg1;
-			if (strchr(arg,'<') && strchr(arg,'>')) {
+			if (strchr(arg, '<') && strchr(arg, '>')) {
 				char content[strlen(arg)];
-				const char * str = strchr(arg,'<') + 1;
+				const char *str = strchr(arg, '<') + 1;
 				memcpy(content, str, strlen(str));
-				char * ptr = strchr(content,'>');
+				char *ptr = strchr(content, '>');
 				if (ptr == NULL) {
 					response = "501 5.1.3 Bad recipient address syntax\r\n";
 				} else {
@@ -425,7 +301,7 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp * st
 	size_t count;
 	uint8_t *ptr = buffer_write_ptr(&state->write_buffer, &count);
 
-	const int len = MIN(count, strlen(response)); // TODO: Check that all the response is in buffer
+	const int len = MIN(count, strlen(response));  // TODO: Check that all the response is in buffer
 	memcpy((char *) ptr, response, len);
 	buffer_write_adv(&state->write_buffer, len);
 	global_status.bytes_transfered += len;
@@ -434,7 +310,7 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp * st
 }
 
 static unsigned int request_read_posta(struct selector_key *key, struct smtp *state) {
-	unsigned int ret = REQUEST_READ;;
+	unsigned int ret = REQUEST_READ;
 	bool error = false;
 	int st = request_consume(&state->read_buffer, &state->request_parser, &error);
 	if (request_is_done(st, 0)) {
@@ -474,14 +350,14 @@ static unsigned request_read(struct selector_key *key) {
 static unsigned int data_read_posta(struct selector_key *key, struct smtp *state) {
 	unsigned int ret;
 
-	buffer * b = &state->read_buffer;
+	buffer *b = &state->read_buffer;
 	enum data_state st;
 
-	while(buffer_can_read(b)) {
+	while (buffer_can_read(b)) {
 		const uint8_t c = buffer_read(b);
 		st = data_parser_feed(&state->data_parser, c);
 		// buffer_write(&state->file_buffer, c);
-		if(data_is_done(st)) {
+		if (data_is_done(st)) {
 			break;
 		}
 	}
@@ -500,10 +376,10 @@ static unsigned int data_read_posta(struct selector_key *key, struct smtp *state
 
 	// write to file from buffer if is not empty
 	if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_NOOP)) {
-		if (SELECTOR_SUCCESS == selector_set_interest_key(&key_file, OP_WRITE))
-			ret = DATA_WRITE; // Desp Vuelvo a request_read
+	    if (SELECTOR_SUCCESS == selector_set_interest_key(&key_file, OP_WRITE))
+	        ret = DATA_WRITE; // Desp Vuelvo a request_read
 	} else {
-		ret = ERROR;
+	    ret = ERROR;
 	}
 	*/
 
@@ -626,7 +502,7 @@ static unsigned data_write(struct selector_key *key) {
 	return ret;
 }
 
-struct status * get_status() {
+struct status *get_status() {
 	return &global_status;
 }
 
@@ -726,11 +602,9 @@ void smtp_passive_accept(struct selector_key *key) {
 
 	const int client = accept(key->fd, (struct sockaddr *) &client_addr, &client_addr_len);
 	if (client == -1) {
-		fprintf(stderr, "Failed to accept client\n");
 		goto fail;
 	}
 	if (selector_fd_set_nio(client) == -1) {
-		fprintf(stderr, "Failed to set client socket to non-blocking\n");
 		goto fail;
 	}
 	state = malloc(sizeof(struct smtp));
@@ -738,7 +612,6 @@ void smtp_passive_accept(struct selector_key *key) {
 		// sin un estado, nos es imposible manejaro.
 		// tal vez deberiamos apagar accept() hasta que detectemos
 		// que se liberó alguna conexión.
-		fprintf(stderr, "Failed to allocate memory for smtp state\n");
 		goto fail;
 	}
 	memset(state, 0, sizeof(*state));
@@ -758,7 +631,7 @@ void smtp_passive_accept(struct selector_key *key) {
 	buffer_init(&state->read_buffer, N(state->raw_buff_read), state->raw_buff_read);
 	buffer_init(&state->write_buffer, N(state->raw_buff_write), state->raw_buff_write);
 
-	const char* greeting = "220 localhost SMTP\r\n"; // 220 EmilioDesktop ESMTP Postfix (Ubuntu)
+	const char *greeting = "220 localhost SMTP\r\n";  // 220 EmilioDesktop ESMTP Postfix (Ubuntu)
 	const int len = strlen(greeting);
 
 	memcpy(&state->raw_buff_write, greeting, len);
@@ -768,7 +641,7 @@ void smtp_passive_accept(struct selector_key *key) {
 	global_status.historic_connections += 1;
 	global_status.concurrent_connections += 1;
 
-	selector_status ss = selector_register(key->s, client, &smtp_handler, OP_WRITE, state);
+	const selector_status ss = selector_register(key->s, client, &smtp_handler, OP_WRITE, state);
 
 	if (SELECTOR_SUCCESS != ss) {
 		fprintf(stderr, "Failed to register client socket with selector (%d)\n", ss);
