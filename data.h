@@ -22,7 +22,7 @@ enum data_state {
 	// '.' -> data_crlfdot, nop
 	//  *   -> data_data, write('\r\n' + c)
 	data_crlf,
-	data_crlf_start, // INICIAL
+	data_crlf_start,  // INICIAL
 
 	// Lei un .
 	// '\r' -> data_crlfdotcr, nop
@@ -36,7 +36,7 @@ enum data_state {
 
 	// apartir de aca están done
 	//  *   -> data_done, nop
-	data_done, // Lei un LF, termine
+	data_done,  // Lei un LF, termine
 };
 
 struct data_parser {

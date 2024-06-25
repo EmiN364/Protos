@@ -6,15 +6,11 @@
 #include <stdbool.h>
 
 struct smtpargs {
-
-    char *         mail_dir;
-
-    unsigned short  smtp_port;
-    unsigned short  mng_port;
-
-    char * 		   transformations;
-
-    char *         pass;
+	char 			*mail_dir;
+	unsigned short 	smtp_port;
+	unsigned short 	mng_port;
+	char 			*transformations;
+	char 			*pass;
 };
 
 /**
@@ -22,8 +18,6 @@ struct smtpargs {
  * args con defaults o la seleccion humana. Puede cortar
  * la ejecución.
  */
-void 
-parse_args(const int argc, char **argv, struct smtpargs *args);
+void parse_args(const int argc, char **argv, struct smtpargs *args);
 
 #endif
-
