@@ -589,8 +589,11 @@ static void smtp_destroy(struct smtp *state) {
 }
 
 static void smtp_close(struct selector_key *key) {
+	struct smtp *state = ATTACHMENT(key);
+	if (state->file_fd > 0)
+		close(state->file_fd);
 	global_status.concurrent_connections -= 1;
-	smtp_destroy(ATTACHMENT(key));
+	smtp_destroy(state);
 }
 
 static void smtp_done(struct selector_key *key) {
