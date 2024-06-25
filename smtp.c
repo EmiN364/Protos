@@ -51,6 +51,8 @@ struct smtp {
 
 	int file_fd;
 	int socket_fd;
+
+	enum { AWAITING_MAILFROM, AWAITING_RCPTTO, AWAITING_DATA } state;
 };
 
 struct status {
@@ -157,92 +159,206 @@ static const struct fd_handler file_handler = {
 	.handle_close = NULL,
 };
 
-static enum smtpstate request_process(struct selector_key *key, struct smtp * state) {
+static int is_valid_email(const char *email) {
+	int at_index = -1;
+	int len = strlen(email);
 
-	char * response;
-	enum smtpstate res_state = RESPONSE_WRITE;
-
-	if (strcasecmp(state->request_parser.request->verb, "data") == 0) {
-		if (state->mailfrom[0] == '\0' || state->rcpt[0] == '\0') {
-			response = "503 5.5.1 Error: need RCPT command\r\n";
-		} else {
-			response = "354 End data with <CR><LF>.<CR><LF>\r\n";
-
-			state->is_data = true;
-
-			data_read_init(key);
-
-			struct stat st = {0};
-
-			/*"mails/" + state->rcpt*/
-			char file_name[100] = "mails/";
-			if (strlen(state->rcpt) > 90)
-				return ERROR;
-
-			strcat(file_name, state->rcpt);
-
-			if (stat("mails", &st) == -1) {
-				if (mkdir("mails", 0755) == -1) {
-					perror("Error creating directory");
-					return ERROR;
-				}
-			}
-
-			// Init new file
-			const int file = open(file_name, O_WRONLY | O_APPEND | O_CREAT, 0644);
-			if (file < 0)
-				return ERROR;
-
-			state->file_fd = file;
-			state->socket_fd = key->fd;
-
-			if (SELECTOR_SUCCESS != selector_register(key->s, file, &file_handler, OP_NOOP, state))
-				return ERROR;
-
+	// Buscar la posición del '@'
+	for (int i = 0; i < len; ++i) {
+		if (email[i] == '@') {
+			at_index = i;
+			break;
 		}
-	} else if (strcasecmp(state->request_parser.request->verb, "mail from") == 0) {
-		// TODO: Check mails
-		strcpy(state->mailfrom, state->request_parser.request->arg1);
-		response = "250 2.1.0 Ok\r\n";
-	} else if (strcasecmp(state->request_parser.request->verb, "rcpt to") == 0) {
-		if (state->mailfrom[0] == '\0') {
-			response = "503 5.5.1 Error: need MAIL command\r\n";
-		} else {
-			// TODO: Check arg1
-			strcpy(state->rcpt, state->request_parser.request->arg1);
-			response = "250 2.1.5 Ok\r\n";
-		}
-	} else if (strcasecmp(state->request_parser.request->verb, "ehlo") == 0) {
-		response = "250-localhost\r\n250-PIPELINING\r\n250 SIZE 10240000\r\n";
-	} else if (strcasecmp(state->request_parser.request->verb, "helo") == 0) {
-		response = "250 localhost\r\n";
-	} else if (strcasecmp(state->request_parser.request->verb, "quit") == 0) {
-		response = "221 2.0.0 Bye\r\n";
-		res_state = DONE;
-	} else if (state->request_parser.i > 0) {
-		response = "502 5.5.2 Error: command not recognized\r\n";
-	} else {
-		response = "500 5.5.2 Error: bad syntax\r\n";
 	}
 
+	// si el @ está al inicio o al final, no es válido
+	if (at_index == 0 || at_index == len - 1) {
+		return 0;
+	}
+
+	//si el @ no está presente, puede ser valido el usuario
+	if (at_index == -1) {
+		char first_char = email[0];
+		if (!((first_char >= 'a' && first_char <= 'z') || (first_char >= 'A' && first_char <= 'Z'))) {
+			return 0; // El primer carácter del usuario no es una letra
+		}
+
+		for (size_t i = 1; i < strlen(email); ++i) {
+			char ch = email[i];
+			if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+				  (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-')) {
+				return 0; // Caracter no válido en el usuario
+				  }
+		}
+		return at_index; // Es válido
+	}
+
+	// Verificar que el dominio sea "pdc.com"
+	const char *expected_domain = "pdc.com";
+	int domain_length = strlen(expected_domain);
+	int domain_index = at_index + 1; // Índice donde comienza el dominio
+
+	for (int i = 0; i < domain_length; ++i) {
+		if (email[domain_index + i] != expected_domain[i] &&
+			email[domain_index + i] != expected_domain[i] - 32) {
+			return 0; // Caracteres del dominio no coinciden (considerando mayúsculas y minúsculas)
+			}
+	}
+
+	// Verificar que el usuario cumpla con las reglas: ^[a-zA-Z][a-zA-Z0-9._-]*@
+	char first_char = email[0];
+	if (!((first_char >= 'a' && first_char <= 'z') || (first_char >= 'A' && first_char <= 'Z'))) {
+		return 0; // El primer carácter del usuario no es una letra
+	}
+
+	for (int i = 1; i < at_index; ++i) {
+		char ch = email[i];
+		if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+			  (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-')) {
+			return 0; // Caracter no válido en el usuario
+			  }
+	}
+
+	return at_index; // Es válido
+}
+
+static int get_response(struct smtp *state, char *arg, char *response) {
+	int at_index = is_valid_email(arg);
+	if (at_index > 0) {
+		// Es un correo electrónico válido, guardar el nombre de usuario
+		strncpy(state->mailfrom, arg, at_index);
+		state->mailfrom[at_index] = '\0';
+		return 0;
+	}
+	if (at_index < 0) {
+		strncpy(state->mailfrom, arg, strlen(arg));
+		state->mailfrom[strlen(arg)] = '\0';
+		return 0;
+	}
+	return 1;
+}
+
+static enum smtpstate request_process(struct selector_key * key,struct smtp *state) {
+    char *response = NULL;
+    enum smtpstate res_state = RESPONSE_WRITE;
+
+    if (strcasecmp(state->request_parser.request->verb, "mail from") == 0) {
+        // Procesar MAIL FROM
+        if (state->state != AWAITING_MAILFROM) {
+            response = "503 5.5.1 Error: MAIL command out of sequence\r\n";
+        } else {
+        	char buffer[40];
+	        char *arg = state->request_parser.request->arg1;
+        	if (strchr(arg,'<') && strchr(arg,'>')) {
+        		// Validar contenido dentro de <>
+        		char content[strlen(arg)];
+        		char* str = strchr(arg,'<');
+        		memcpy(content, str, strlen(str));
+        		char *ptr = strchr(content,'>');
+        		if (ptr < str) {
+					response = "550 5.1.0 Invalid sender address\r\n";
+				} else {
+					content[strlen(ptr)] = '\0';
+					int ans = get_response(state,content, buffer);
+					if (ans == 0) {
+						response = "250 2.1.0 Ok\r\n";
+					} else {
+						response = "255 5.1.0 Invalid sender address\r\n";
+					}
+				}
+        	} else {
+        		int ans = get_response(state,arg, buffer);
+        		if (ans == 0) {
+        			response = "250 2.1.0 Ok\r\n";
+        		} else {
+        			response = "255 5.1.0 Invalid sender address\r\n";
+        		}
+
+        	}
+        }
+    } else if (strcasecmp(state->request_parser.request->verb, "rcpt to") == 0) {
+        // Procesar RCPT TO
+        if (state->state != AWAITING_RCPTTO) {
+            response = "503 5.5.1 Error: RCPT command out of sequence\r\n";
+        } else {
+        	char *arg = state->request_parser.request->arg1;
+        	if (arg[0] == '<' && arg[strlen(arg) - 1] == '>') {
+        		char content[strlen(arg)];
+        		memcpy(content, &arg[1], strlen(arg) - 2);
+        		content[strlen(arg) - 2] = '\0';
+        		// Validar el correo electrónico
+        		get_response(state, content, response);
+        	} else {
+        		get_response(state, arg, response);
+        	}
+        }
+    } else if (strcasecmp(state->request_parser.request->verb, "data") == 0) {
+        // Procesar DATA
+        if (state->state != AWAITING_RCPTTO) {
+            response = "503 5.5.1 Error: need RCPT command\r\n";
+        } response = "354 End data with <CR><LF>.<CR><LF>\r\n";
+
+    	state->is_data = true;
+
+    	data_read_init(key);
+
+    	struct stat st = {0};
+
+    	///"mails/" + state->rcpt/
+		char file_name[100] = "mails/";
+    	if (strlen(state->rcpt) > 90)
+    		return ERROR;
+
+    	strcat(file_name, state->rcpt);
+
+    	if (stat("mails", &st) == -1) {
+    		if (mkdir("mails", 0755) == -1) {
+    			perror("Error creating directory");
+    			return ERROR;
+    		}
+    	}
+
+    	// Init new file
+    	const int file = open(file_name, O_WRONLY | O_APPEND | O_CREAT, 0644);
+    	if (file < 0)
+    		return ERROR;
+
+    	state->file_fd = file;
+    	state->socket_fd = key->fd;
+
+    	if (SELECTOR_SUCCESS != selector_register(key->s, file, &file_handler, OP_NOOP, state))
+    		return ERROR;
+
+    } else if (strcasecmp(state->request_parser.request->verb, "quit") == 0) {
+        // Procesar QUIT
+        response = "221 2.0.0 Bye\r\n";
+        res_state = DONE;
+    } else if (strcasecmp(state->request_parser.request->verb, "ehlo") == 0) {
+        // Procesar EHLO
+        response = "250-localhost\n250-PIPELINING\n250 SIZE 10240000\r\n";
+    } else if (strcasecmp(state->request_parser.request->verb, "helo") == 0) {
+        // Procesar HELO
+        response = "250 localhost\r\n";
+    } else {
+        // Comando no reconocido
+        response = "500 5.5.2 Error: command not recognized\r\n";
+    }
 	size_t count;
 	uint8_t *ptr = buffer_write_ptr(&state->write_buffer, &count);
 
-	const int len = MIN(count, strlen(response)); // TODO: Check that all the response is in buffer
-	memcpy((char *) ptr, response, len);
+	const int len = MIN(count, strlen(response) + 1); // TODO: Check that all the response is in buffer
+	strncpy((char *) ptr, response, len);
 	buffer_write_adv(&state->write_buffer, len);
-	global_status.bytes_transfered += len;
-
-	return res_state;
+    return res_state;
 }
 
-static unsigned int request_read_posta(struct selector_key *key, struct smtp *state) {
-	unsigned int ret = REQUEST_READ;;
+static unsigned request_read_posta(struct selector_key *key, struct smtp *state) {
+	unsigned int ret = REQUEST_READ;
 	bool error = false;
 	int st = request_consume(&state->read_buffer, &state->request_parser, &error);
+
 	if (request_is_done(st, 0)) {
 		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
-			// Procesamiento
 			ret = request_process(key, state);
 		} else {
 			ret = ERROR;
