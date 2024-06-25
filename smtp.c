@@ -210,6 +210,103 @@ void generate_id(char * buffer) {
 	buffer[9] = '\0'; // Asegurarse de que la cadena termine en '\0'
 }
 
+static int is_valid_email(const char *email) {
+	int at_index = -1;
+	int len = strlen(email);
+
+	// Buscar la posición del '@'
+	for (int i = 0; i < len; ++i) {
+		if (email[i] == '@') {
+			at_index = i;
+			break;
+		}
+	}
+
+	// si el @ está al inicio o al final, no es válido
+	if (at_index == 0 || at_index == len - 1) {
+		return 0;
+	}
+
+	//si el @ no está presente, puede ser valido el usuario
+	if (at_index == -1) {
+		char first_char = email[0];
+		if (!((first_char >= 'a' && first_char <= 'z') || (first_char >= 'A' && first_char <= 'Z'))) {
+			return 0; // El primer carácter del usuario no es una letra
+		}
+
+		for (size_t i = 1; i < strlen(email); ++i) {
+			char ch = email[i];
+			if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+				  (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-')) {
+				return 0; // Caracter no válido en el usuario
+				  }
+		}
+		return at_index; // Es válido
+	}
+
+	// Verificar que el dominio sea "pdc.com"
+	const char *expected_domain = "pdc.com";
+	int domain_length = strlen(expected_domain);
+	int domain_index = at_index + 1; // Índice donde comienza el dominio
+
+	for (int i = 0; i < domain_length; ++i) {
+		if (email[domain_index + i] != expected_domain[i] &&
+			email[domain_index + i] != expected_domain[i] - 32) {
+			return 0; // Caracteres del dominio no coinciden (considerando mayúsculas y minúsculas)
+			}
+	}
+
+	// Verificar que el usuario cumpla con las reglas: ^[a-zA-Z][a-zA-Z0-9._-]*@
+	char first_char = email[0];
+	if (!((first_char >= 'a' && first_char <= 'z') || (first_char >= 'A' && first_char <= 'Z'))) {
+		return 0; // El primer carácter del usuario no es una letra
+	}
+
+	for (int i = 1; i < at_index; ++i) {
+		char ch = email[i];
+		if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+			  (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-')) {
+			return 0; // Caracter no válido en el usuario
+			  }
+	}
+
+	return at_index; // Es válido
+}
+
+static int get_response(struct smtp *state, char *arg, bool is_mail_from) {
+	int at_index = is_valid_email(arg);
+	if (at_index > 0) {
+		// Es un correo electrónico válido, guardar el nombre de usuario
+		if (is_mail_from) {
+			strncpy(state->mailfrom, arg, at_index);
+			state->mailfrom[at_index] = '\0';
+		} else {
+			strncpy(state->rcpt, arg, at_index);
+			state->rcpt[at_index] = '\0';
+		}
+
+		return 0;
+	}
+	if (at_index < 0) {
+		int len = strlen(arg);
+		bool space_found = false;
+		for (int i = 0; i < len && arg[i]; ++i) {
+			if (arg[i] != ' ') {
+				if (space_found)
+					return 1;
+				state->mailfrom[i] = arg[i];
+			} else {
+				if (!space_found) {
+					space_found = true;
+					state->mailfrom[i] = '\0';
+				}
+			}
+		}
+		return 0;
+	}
+	return 1;
+}
+
 static const struct fd_handler file_handler = {
 	.handle_read = NULL,
 	.handle_write = file_write,
@@ -234,7 +331,6 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp * st
 			if (build_mail_dir(state->rcpt) != 0)
 				return ERROR;
 
-			// Construct filename: date +%s + ".random"
 			time_t t = time(NULL);
 			sprintf(state->file_name, "%d.%d", (int) t, rand() % 100000);
 			sprintf(state->file_full_name, "%s/%s/tmp/%s", BASE_DIR, state->rcpt, state->file_name);
@@ -252,16 +348,56 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp * st
 
 		}
 	} else if (strcasecmp(state->request_parser.request->verb, "mail from") == 0) {
-		// TODO: Check mails
-		strcpy(state->mailfrom, state->request_parser.request->arg1);
-		response = "250 2.1.0 Ok\r\n";
+		if (state->mailfrom[0] != '\0') {
+			response = "503 5.5.1 Error: nested MAIL command\r\n";
+		} else {
+			response = "250 2.1.0 Ok\r\n";
+
+			char *arg = state->request_parser.request->arg1;
+			if (strchr(arg,'<') && strchr(arg,'>')) {
+				char content[strlen(arg)];
+				const char* str = strchr(arg,'<') + 1;
+				memcpy(content, str, strlen(str));
+				char *ptr = strchr(content,'>');
+				if (ptr == NULL) {
+					response = "501 5.1.7 Bad recipient address syntax\r\n";
+				} else {
+					*ptr = '\0';
+					if (get_response(state, content, true) != 0) {
+						response = "501 5.1.7 Bad recipient address syntax\r\n";
+					}
+				}
+			} else {
+				if (get_response(state, arg, true) != 0) {
+					response = "501 5.1.7 Bad recipient address syntax\r\n";
+				}
+			}
+		}
 	} else if (strcasecmp(state->request_parser.request->verb, "rcpt to") == 0) {
 		if (state->mailfrom[0] == '\0') {
 			response = "503 5.5.1 Error: need MAIL command\r\n";
 		} else {
-			// TODO: Check arg1
-			strcpy(state->rcpt, state->request_parser.request->arg1);
-			response = "250 2.1.5 Ok\r\n";
+			response = "250 2.1.0 Ok\r\n";
+
+			char *arg = state->request_parser.request->arg1;
+			if (strchr(arg,'<') && strchr(arg,'>')) {
+				char content[strlen(arg)];
+				const char * str = strchr(arg,'<') + 1;
+				memcpy(content, str, strlen(str));
+				char * ptr = strchr(content,'>');
+				if (ptr == NULL) {
+					response = "501 5.1.3 Bad recipient address syntax\r\n";
+				} else {
+					*ptr = '\0';
+					if (get_response(state, content, false) != 0) {
+						response = "501 5.1.3 Bad recipient address syntax\r\n";
+					}
+				}
+			} else {
+				if (get_response(state, arg, false) != 0) {
+					response = "501 5.1.3 Bad recipient address syntax\r\n";
+				}
+			}
 		}
 	} else if (strcasecmp(state->request_parser.request->verb, "ehlo") == 0) {
 		response = "250-localhost\r\n250-PIPELINING\r\n250 SIZE 10240000\r\n";
