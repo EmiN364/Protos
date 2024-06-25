@@ -260,7 +260,7 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp *sta
 					close(writefds[1]);
 					close(file);
 
-					execl(global_status.program, global_status.program, (char *) NULL);
+					execlp(global_status.program, global_status.program, (char *) NULL);
 					perror("Error while creating slave");
 					exit(EXIT_FAILURE);
 				}

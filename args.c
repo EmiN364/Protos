@@ -66,12 +66,11 @@ static void usage(const char *progname) {
 }
 
 void parse_args(const int argc, char **argv, struct smtpargs *args) {
-	memset(args, 0, sizeof(*args));  // sobre todo para setear en null los punteros de users
+	memset(args, 0, sizeof(*args));
 
 	args->smtp_port = 2525;
 	args->mng_port = 2626;
 	args->pass = "secretpa";
-	args->transformations = "/bin/tac";
 
 	int c;
 
