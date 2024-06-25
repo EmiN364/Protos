@@ -12,3 +12,5 @@ mng_client
 docker.sh
 Dockerfile
 stress_test
+test.c
+test

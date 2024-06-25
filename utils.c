@@ -120,16 +120,9 @@ int build_mail_dir(const char *user) {
 	return 0;
 }
 
-bool seed_setted = false;
-
 void generate_id(char *buffer) {
 	const char caracteres[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 	const int num_caracteres = sizeof(caracteres) - 1;
-
-	if (seed_setted == false) {
-		srand(time(NULL));
-		seed_setted = true;
-	}
 
 	for (int i = 0; i < 9; i++) {
 		buffer[i] = caracteres[rand() % num_caracteres];

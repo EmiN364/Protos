@@ -71,7 +71,7 @@ void parse_args(const int argc, char **argv, struct smtpargs *args) {
 	args->smtp_port = 2525;
 	args->mng_port = 2626;
 	args->pass = "secretpa";
-	args->transformations = "tac";
+	args->transformations = "/bin/tac";
 
 	int c;
 

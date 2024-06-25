@@ -21,6 +21,7 @@
 #include <netinet/tcp.h>
 #include <signal.h>
 #include <stdio.h>
+#include <time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>  // socket
@@ -38,6 +39,8 @@ int main(const int argc, char **argv) {
 	struct smtpargs args;
 
 	parse_args(argc, argv, &args);
+
+	srand(time(NULL));
 
 	// no tenemos nada que leer de stdin
 	close(0);

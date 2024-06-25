@@ -223,9 +223,7 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp *sta
 			if (build_mail_dir(state->rcpt) != 0)
 				return ERROR;
 
-			time_t t = time(NULL);
-			srand(t);
-			sprintf(state->file_name, "%d.%d", (int) t, rand() % 100000);
+			sprintf(state->file_name, "%d.%d", (int) time(NULL), rand() % 100000);
 			sprintf(state->file_full_name, "%s/%s/tmp/%s", BASE_DIR, state->rcpt, state->file_name);
 
 			// Init new file
@@ -260,6 +258,7 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp *sta
 
 					close(writefds[0]);
 					close(writefds[1]);
+					close(file);
 
 					execl(global_status.program, global_status.program, (char *) NULL);
 					perror("Error while creating slave");
@@ -274,7 +273,6 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp *sta
 
 			if (SELECTOR_SUCCESS != selector_register(key->s, state->file_fd, &file_handler, OP_NOOP, state))
 				return ERROR;
-
 		}
 	} else if (strcasecmp(state->request_parser.request->verb, "mail from") == 0) {
 		if (state->mailfrom[0] != '\0') {
@@ -486,7 +484,7 @@ static unsigned data_write(struct selector_key *key) {
 	struct smtp *state = ATTACHMENT(key);
 
 	uint8_t *ptr = buffer_read_ptr(wb, &count);
-	ssize_t n = write(key->fd, ptr, count);
+	ssize_t n = write(state->file_fd, ptr, count);
 
 	if (n >= 0) {
 		buffer_read_adv(wb, n);
@@ -501,7 +499,7 @@ static unsigned data_write(struct selector_key *key) {
 						state->is_data = false;
 
 						close(state->file_fd);
-						wait(NULL);
+						// wait(NULL);
 
 						char new_file_name[MAX_PATH];
 						sprintf(new_file_name, "%s/%s/new/%s", BASE_DIR, state->rcpt, state->file_name);
@@ -509,6 +507,9 @@ static unsigned data_write(struct selector_key *key) {
 
 						state->file_name[0] = '\0';
 						state->file_full_name[0] = '\0';
+
+						if (SELECTOR_SUCCESS != selector_unregister_fd(key->s, state->file_fd))
+							return ERROR;
 
 						state->file_fd = 0;
 						data_read_close(key);
