@@ -124,6 +124,7 @@ int main(int argc, char *argv[]) {
 	    recvfrom(sock, response_datagram, sizeof(response_datagram), 0, (struct sockaddr *) &fromAddr, &fromAddrLen);
 	if (numBytes < 0) {
 		fprintf(stderr, "recvfrom() failed: %s", strerror(errno));
+		exit(1);
 	} else {
 		if (numBytes != sizeof(response_datagram))
 			fprintf(stderr,
@@ -150,32 +151,32 @@ int main(int argc, char *argv[]) {
 	uint8_t status = response_datagram[5];
 
 	if (status == 0x00) {
-		uint64_t count = 0;
-		memcpy(&count, response_datagram + 6, sizeof(uint64_t));
+		uint32_t count = 0;
+		memcpy(&count, response_datagram + 6, sizeof(uint32_t));
 		count = ntohl(count);
 		printf("Identifier: %d\n", identifier);
-		printf("Count: %lu\n", count);
-		printf("Success: %s\n", status == 0x00 ? "TRUE" : "FALSE");
+		printf("Count: %u\n", count);
+		printf("Success: %s\n", response_datagram[6] == 0x00 ? "TRUE" : "FALSE");
 	} else {
 		fprintf(stderr, "Error: ");
 		switch (status) {
 			case 0x01:
-				fprintf(stderr, "Auth failed");
+				fprintf(stderr, "Auth failed\n");
 				break;
 			case 0x02:
-				fprintf(stderr, "Invalid version");
+				fprintf(stderr, "Invalid version\n");
 				break;
 			case 0x03:
-				fprintf(stderr, "Invalid command");
+				fprintf(stderr, "Invalid command\n");
 				break;
 			case 0x04:
-				fprintf(stderr, "Invalid request (length)");
+				fprintf(stderr, "Invalid request (length)\n");
 				break;
 			case 0x05:
-				fprintf(stderr, "Unexpected error");
+				fprintf(stderr, "Unexpected error\n");
 				break;
 			default:
-				fprintf(stderr, "Unknown error");
+				fprintf(stderr, "Unknown error\n");
 				break;
 		}
 	}

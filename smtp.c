@@ -53,10 +53,6 @@ struct smtp {
 	int socket_fd;
 };
 
-struct status {
-	int historic_connections, concurrent_connections, bytes_transfered, mails_sent;
-};
-
 struct status global_status = {0};
 
 /** maquina de estados general */
@@ -413,6 +409,10 @@ static unsigned data_write(struct selector_key *key) {
 	}
 
 	return ret;
+}
+
+struct status * get_status() {
+	return &global_status;
 }
 
 

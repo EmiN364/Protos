@@ -3,6 +3,12 @@
 
 #include "selector.h"
 
+struct status {
+  __uint32_t historic_connections, concurrent_connections, bytes_transfered, mails_sent;
+};
+
 void smtp_passive_accept(struct selector_key *key);
+
+struct status * get_status();
 
 #endif //SMTP_H
