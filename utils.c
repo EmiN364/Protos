@@ -146,3 +146,21 @@ void concat_date(char * buffer) {
 	strcat(buffer, date_formatted);
 	strcat(buffer, "\r\n");
 }
+
+int createPipe(int fildes[2]) {
+	int ret = pipe(fildes);
+	if (ret != 0) {
+		perror("Error while creating pipe");
+		exit(EXIT_FAILURE);
+	}
+	return ret;
+}
+
+int createFork() {
+	int pid = fork();
+	if (pid < 0) {
+		perror("Error while creating slave");
+		exit(EXIT_FAILURE);
+	}
+	return pid;
+}

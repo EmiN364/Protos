@@ -19,12 +19,17 @@
 #include <time.h>
 #include <unistd.h>  // close
 #include <sys/stat.h>
+#include <sys/wait.h>
 
 #define N(x)      (sizeof(x) / sizeof((x)[0]))
 #define MIN(x, y) (x < y ? x : y)
 
 #define BASE_DIR "mails"
 #define BUFFER_LENGTH 2048
+#define MAX_DOMAIN_SIZE 255
+#define MAX_PATH 300
+#define MAX_FILE_NAME 20
+
 // TODO: Check this
 
 /** obtiene el struct (smtp *) desde la llave de selección  */
@@ -49,11 +54,11 @@ struct smtp {
 
 	bool is_data;
 
-	char mailfrom[255];
-	char rcpt[255]; // TODO: Change to list
+	char mailfrom[MAX_DOMAIN_SIZE];
+	char rcpt[MAX_DOMAIN_SIZE]; // TODO: Change to list
 
-	char file_full_name[300];
-	char file_name[20];
+	char file_full_name[MAX_PATH];
+	char file_name[MAX_FILE_NAME];
 
 	int file_fd;
 	int socket_fd;
@@ -231,13 +236,43 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp *sta
 			state->file_fd = file;
 			state->socket_fd = key->fd;
 
-			char to_send[300] = "From ";
+			char to_send[50] = "From ";
 			strcat(to_send, state->mailfrom);
 			concat_date(to_send);
 
 			write(file, to_send, strlen(to_send));
 
-			if (SELECTOR_SUCCESS != selector_register(key->s, file, &file_handler, OP_NOOP, state))
+			if (global_status.transformations) {
+
+				int writefds[2];
+
+				createPipe(writefds);
+
+				int pid = createFork();
+				if (pid == 0) {
+					// Child - Transformations
+
+					// Redirect stdin and stdout to pipes
+					close(STDIN_FILENO);
+					dup(writefds[0]); // read end of where app writes
+					close(STDOUT_FILENO);
+					dup(file); // write end of where app reads
+
+					close(writefds[0]);
+					close(writefds[1]);
+
+					execl(global_status.program, global_status.program, (char *) NULL);
+					perror("Error while creating slave");
+					exit(EXIT_FAILURE);
+				}
+
+				// Father
+				close(writefds[0]);
+				close(file);
+				state->file_fd = writefds[1];
+			}
+
+			if (SELECTOR_SUCCESS != selector_register(key->s, state->file_fd, &file_handler, OP_NOOP, state))
 				return ERROR;
 
 		}
@@ -342,7 +377,7 @@ static unsigned request_read(struct selector_key *key) {
 	} else {
 		size_t count;
 		uint8_t *ptr = buffer_write_ptr(&state->read_buffer, &count);
-		ssize_t n = recv(key->fd, ptr, count, 0);
+		const ssize_t n = recv(key->fd, ptr, count, MSG_DONTWAIT);
 
 		if (n > 0) {
 			buffer_write_adv(&state->read_buffer, n);
@@ -403,7 +438,7 @@ static unsigned data_read(struct selector_key *key) {
 	} else {
 		size_t count;
 		uint8_t *ptr = buffer_write_ptr(&state->read_buffer, &count);
-		ssize_t n = recv(key->fd, ptr, count, 0);
+		const ssize_t n = recv(key->fd, ptr, count, MSG_DONTWAIT);
 
 		if (n > 0) {
 			buffer_write_adv(&state->read_buffer, n);
@@ -466,8 +501,9 @@ static unsigned data_write(struct selector_key *key) {
 						state->is_data = false;
 
 						close(state->file_fd);
+						wait(NULL);
 
-						char new_file_name[300];
+						char new_file_name[MAX_PATH];
 						sprintf(new_file_name, "%s/%s/new/%s", BASE_DIR, state->rcpt, state->file_name);
 						rename(state->file_full_name, new_file_name);
 
@@ -651,6 +687,8 @@ void smtp_passive_accept(struct selector_key *key) {
 	global_status.bytes_transfered += len;
 	global_status.historic_connections += 1;
 	global_status.concurrent_connections += 1;
+	global_status.program = (char *) key->data;
+	global_status.transformations = key->data != NULL ? true : false;
 
 	const selector_status ss = selector_register(key->s, client, &smtp_handler, OP_WRITE, state);
 

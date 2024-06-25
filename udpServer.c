@@ -69,10 +69,6 @@ void mng_passive_accept(struct selector_key *key) {
 	// Como alternativa a recvfrom se puede usar recvmsg, que es mas completa, por ejemplo permite saber
 	// si el mensaje recibido es de mayor longitud a MAXSTRINGLENGTH
 
-	// TODO: is it necessary to use the flag MSG_DONTWAIT to avoid blocking? Or because it's UDP it's not necessary?
-	// ssize_t numBytesRcvd = recvfrom(sock, buffer, MAXSTRINGLENGTH, 0, (struct sockaddr *) &clntAddr,
-	// &clntAddrLen);
-
 	ssize_t numBytesRcvd = recvfrom(key->fd, datagram, DATAGRAM_LENGTH, MSG_NOSIGNAL, (struct sockaddr *) &clntAddr, &clntAddrLen);
 	if (numBytesRcvd < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
 		fprintf(stderr, "recvfrom() failed: %s ", strerror(errno));

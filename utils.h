@@ -2,6 +2,8 @@
 #define PROTOS_UTILS_H
 
 #include <stdbool.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 /*
  * Verifica si un email es válido.
@@ -15,5 +17,9 @@ int build_mail_dir(const char *user);
 void generate_id(char *buffer);
 
 void concat_date(char * buffer);
+
+int createPipe(int fildes[2]);
+
+int createFork();
 
 #endif  // PROTOS_UTILS_H
