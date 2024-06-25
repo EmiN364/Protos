@@ -57,7 +57,6 @@ int printSocketAddress(const struct sockaddr *address, char *addrBuffer) {
 #define PASS_LENGTH     8
 
 void mng_passive_accept(struct selector_key *key) {
-	puts("Waiking up");
 
 	struct sockaddr_storage clntAddr;  // Client address
 	// Set Length of client address structure (in-out parameter)

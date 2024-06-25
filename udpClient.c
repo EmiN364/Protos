@@ -43,7 +43,7 @@ int udpClientSocket(const char *host, const char *service, struct addrinfo **ser
 	// Tomamos la primera de la lista
 	int rtnVal = getaddrinfo(host, service, &addrCriteria, servAddr);
 	if (rtnVal != 0) {
-		fprintf(stderr, "getaddrinfo() failed: %s", gai_strerror(rtnVal));
+		fprintf(stderr, "getaddrinfo() failed: %s\n", gai_strerror(rtnVal));
 		exit(1);
 	}
 
@@ -56,7 +56,7 @@ int udpClientSocket(const char *host, const char *service, struct addrinfo **ser
 
 int main(int argc, char *argv[]) {
 	if (argc != 5) {
-		fprintf(stderr, "Usage: %s <Server Address/Name> <Auth> <Server Port/Service> <Command>", argv[0]);
+		fprintf(stderr, "Usage: %s <Server Address/Name> <Auth> <Server Port/Service> <Command>\n", argv[0]);
 		exit(1);
 	}
 
@@ -69,18 +69,22 @@ int main(int argc, char *argv[]) {
 
 	ssize_t passwordLen = strlen(password);
 	if (passwordLen != 8) {
-		fprintf(stderr, "Password must be 10 characters long");
+		fprintf(stderr, "Password must be 8 characters long\n");
 		exit(1);
 	}
 
 	char *servPort = argv[3];
 
 	char *command = argv[4];
+	if (strlen(command) != 1 || command[0] < '0' || command[0] > '6') {
+		fprintf(stderr, "Command must be between 0 and 6\n");
+		exit(1);
+	}
 
 	errno = 0;
 	int sock = udpClientSocket(server, servPort, &servAddr);
 	if (sock < 0) {
-		fprintf(stderr, "socket() failed: %s", strerror(errno));
+		fprintf(stderr, "socket() failed: %s\n", strerror(errno));
 	}
 
 	srand(time(NULL));   // Initialization, should only be called once.
@@ -98,11 +102,11 @@ int main(int argc, char *argv[]) {
 	// Enviamos el string, puede fallar si la length es mayor a la max de udp
 	ssize_t numBytes = sendto(sock, datagram, sizeof(datagram), 0, servAddr->ai_addr, servAddr->ai_addrlen);
 	if (numBytes < 0) {
-		fprintf(stderr, "sendto() failed: %s", strerror(errno));
+		fprintf(stderr, "sendto() failed: %s\n", strerror(errno));
 		exit(1);
 	}
 	if (numBytes != sizeof(datagram)) {
-		fprintf(stderr, "sendto() error, sent unexpected number of bytes");
+		fprintf(stderr, "sendto() error, sent unexpected number of bytes\n");
 		exit(1);
 	}
 
@@ -115,7 +119,7 @@ int main(int argc, char *argv[]) {
 	tv.tv_sec = 5;
 	tv.tv_usec = 0;
 	if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
-		fprintf(stderr, "setsockopt error: %s", strerror(errno));
+		fprintf(stderr, "setsockopt error: %s\n", strerror(errno));
 	}
 
 	uint8_t response_datagram[14];
@@ -123,27 +127,27 @@ int main(int argc, char *argv[]) {
 	numBytes =
 	    recvfrom(sock, response_datagram, sizeof(response_datagram), 0, (struct sockaddr *) &fromAddr, &fromAddrLen);
 	if (numBytes < 0) {
-		fprintf(stderr, "recvfrom() failed: %s", strerror(errno));
+		fprintf(stderr, "recvfrom() failed: %s\n", strerror(errno));
 		exit(1);
 	} else {
 		if (numBytes != sizeof(response_datagram))
 			fprintf(stderr,
-			        "recvfrom() error. Received unexpected number of bytes, expected:%zu received:%zu ",
+			        "recvfrom() error. Received unexpected number of bytes, expected:%zu received:%zu \n",
 			        sizeof(response_datagram),
 			        numBytes);
 
 		// "Autenticamos" la respuesta
 		if (!sockAddrsEqual(servAddr->ai_addr, (struct sockaddr *) &fromAddr))
-			fprintf(stderr, "recvfrom() received a packet from other source");
+			fprintf(stderr, "recvfrom() received a packet from other source\n");
 	}
 
 	if (response_datagram[0] != 0xFF || response_datagram[1] != 0xFE) {
-		fprintf(stderr, "Invalid protocol signature");
+		fprintf(stderr, "Invalid protocol signature\n");
 		exit(1);
 	}
 
 	if (response_datagram[2] != 0x00) {
-		fprintf(stderr, "Invalid protocol version");
+		fprintf(stderr, "Invalid protocol version\n");
 		exit(1);
 	}
 

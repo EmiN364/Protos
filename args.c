@@ -19,9 +19,8 @@ port(const char *s) {
         || sl < 0 || sl > USHRT_MAX) {
          fprintf(stderr, "port should in in the range of 1-65536: %s\n", s);
          exit(1);
-         return 1;
      }
-     return (unsigned short)sl;
+     return sl;
 }
 
 static const char *
