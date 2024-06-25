@@ -201,7 +201,7 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp * st
 
 		}
 	} else if (strcasecmp(state->request_parser.request->verb, "mail from") == 0) {
-		// TODO: Check arg1
+		// TODO: Check mails
 		strcpy(state->mailfrom, state->request_parser.request->arg1);
 		response = "250 2.1.0 Ok\r\n";
 	} else if (strcasecmp(state->request_parser.request->verb, "rcpt to") == 0) {
@@ -213,7 +213,7 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp * st
 			response = "250 2.1.5 Ok\r\n";
 		}
 	} else if (strcasecmp(state->request_parser.request->verb, "ehlo") == 0) {
-		response = "250-localhost\n250-PIPELINING\n250 SIZE 10240000\r\n";
+		response = "250-localhost\r\n250-PIPELINING\r\n250 SIZE 10240000\r\n";
 	} else if (strcasecmp(state->request_parser.request->verb, "helo") == 0) {
 		response = "250 localhost\r\n";
 	} else if (strcasecmp(state->request_parser.request->verb, "quit") == 0) {
@@ -228,9 +228,10 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp * st
 	size_t count;
 	uint8_t *ptr = buffer_write_ptr(&state->write_buffer, &count);
 
-	const int len = MIN(count, strlen(response) + 1); // TODO: Check that all the response is in buffer
-	strncpy((char *) ptr, response, len);
+	const int len = MIN(count, strlen(response)); // TODO: Check that all the response is in buffer
+	memcpy((char *) ptr, response, len);
 	buffer_write_adv(&state->write_buffer, len);
+	global_status.bytes_transfered += len;
 
 	return res_state;
 }
@@ -242,7 +243,7 @@ static unsigned int request_read_posta(struct selector_key *key, struct smtp *st
 	if (request_is_done(st, 0)) {
 		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
 			// Procesamiento
-			ret = request_process(key, state); // tengo todo completo
+			ret = request_process(key, state);
 		} else {
 			ret = ERROR;
 		}
@@ -390,9 +391,12 @@ static unsigned data_write(struct selector_key *key) {
 						ptr = buffer_write_ptr(&state->write_buffer, &count);
 
 						// TODO: Check that all the response is in buffer, and that 35 is correct or it should be 36
-						const int len = MIN(36, count);
-						strncpy((char *) ptr, "250 2.0.0 Ok: queued as 5E0AA44E8\n", len);
+						const int len = MIN(35, count);
+						memcpy((char *) ptr, "250 2.0.0 Ok: queued as 5E0AA44E8\r\n", len);
 						buffer_write_adv(&state->write_buffer, len);
+						global_status.bytes_transfered += len;
+
+						global_status.mails_sent += 1;
 
 						ret = RESPONSE_WRITE;
 					}
@@ -486,6 +490,7 @@ static void smtp_destroy(struct smtp *state) {
 }
 
 static void smtp_close(struct selector_key *key) {
+	global_status.concurrent_connections -= 1;
 	smtp_destroy(ATTACHMENT(key));
 }
 
@@ -535,11 +540,15 @@ void smtp_passive_accept(struct selector_key *key) {
 	buffer_init(&state->read_buffer, N(state->raw_buff_read), state->raw_buff_read);
 	buffer_init(&state->write_buffer, N(state->raw_buff_write), state->raw_buff_write);
 
-	const char* greeting = "220 localhost SMTP\r\n";
+	const char* greeting = "220 localhost SMTP\r\n"; // 220 EmilioDesktop ESMTP Postfix (Ubuntu)
 	const int len = strlen(greeting);
 
 	memcpy(&state->raw_buff_write, greeting, len);
 	buffer_write_adv(&state->write_buffer, len);
+
+	global_status.bytes_transfered += len;
+	global_status.historic_connections += 1;
+	global_status.concurrent_connections += 1;
 
 	if (SELECTOR_SUCCESS != selector_register(key->s, client, &smtp_handler, OP_WRITE, state)) {
 		goto fail;

@@ -1,12 +1,13 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <unistd.h>
-#include <errno.h>
+#include "selector.h"
 #include <arpa/inet.h>
+#include <errno.h>
+#include <netdb.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #define MAX_ADDR_BUFFER 128
 #define MAXSTRINGLENGTH 64
@@ -77,7 +78,7 @@ printSocketAddress(const struct sockaddr *address, char *addrBuffer) {
  ** y crear el socket UDP, para que escuche en cualquier IP, ya sea v4 o v6
  ** Funcion muy parecida a setupTCPServerSocket, solo cambia el tipo de servicio y que no es necesario invocar a listen()
  */
-int setupUDPServerSocket(const char *service) {
+/*int setupUDPServerSocket(const char *service) {
     // Construct the server address structure
     struct addrinfo addrCriteria;                   // Criteria for address
     memset(&addrCriteria, 0, sizeof(addrCriteria)); // Zero out structure
@@ -128,23 +129,20 @@ int setupUDPServerSocket(const char *service) {
     freeaddrinfo(servAddr);
 
     return servSock;
-}
+}*/
 
-int main(int argc, char *argv[]) {
+#define DATAGRAM_LENGTH 14
+#define PASS_LENGTH 8
 
-    if (argc != 2) {
-        fprintf(stderr, "usage: %s <Server Port>\n", argv[0]);
-        exit(1);
-    }
 
-    char *service = argv[1];    // First arg:  local port
+int mng_passive_accept(struct selector_key *key) {
 
-    // Create socket for incoming connections
+    /*// Create socket for incoming connections
     int sock = setupUDPServerSocket(service);
     if (sock < 0) {
         fprintf(stderr, "socket() failed: %s ", strerror(errno));
         exit(1);
-    }
+    }*/
 
     for (;;) {
         struct sockaddr_storage clntAddr;            // Client address
@@ -152,16 +150,16 @@ int main(int argc, char *argv[]) {
         socklen_t clntAddrLen = sizeof(clntAddr);
 
         // Block until receive message from a client
-        char buffer[MAXSTRINGLENGTH];
+    	uint8_t datagram[DATAGRAM_LENGTH];
 
         errno = 0;
         // Como alternativa a recvfrom se puede usar recvmsg, que es mas completa, por ejemplo permite saber
         // si el mensaje recibido es de mayor longitud a MAXSTRINGLENGTH
 
         // TODO: is it necessary to use the flag MSG_DONTWAIT to avoid blocking? Or because it's UDP it's not necessary?
-        // ssize_t numBytesRcvd = recvfrom(sock, buffer, MAXSTRINGLENGTH, MSG_DONTWAIT, (struct sockaddr *) &clntAddr, &clntAddrLen);
+        // ssize_t numBytesRcvd = recvfrom(sock, buffer, MAXSTRINGLENGTH, 0, (struct sockaddr *) &clntAddr, &clntAddrLen);
 
-        ssize_t numBytesRcvd = recvfrom(sock, buffer, MAXSTRINGLENGTH, 0, (struct sockaddr *) &clntAddr, &clntAddrLen);
+        ssize_t numBytesRcvd = recvfrom(key->fd, datagram, DATAGRAM_LENGTH, MSG_DONTWAIT, (struct sockaddr *) &clntAddr, &clntAddrLen);
         if (numBytesRcvd < 0) {
             fprintf(stderr, "recvfrom() failed: %s ", strerror(errno));
             continue;
@@ -171,9 +169,22 @@ int main(int argc, char *argv[]) {
         fprintf(stdout, "Handling client %s, received %zu bytes", addrBuffer, numBytesRcvd);
 
         // TODO: Process the received datagram and send a response
+    	if (datagram[0] != 0xFF || datagram[1] != 0xFE) {
+			fprintf(stderr, "Invalid datagram received");
+			continue;
+		}
+    	if (datagram[2] != 0x00) {
+    		fprintf(stderr, "Version mismatch");
+    		continue;
+    	}
+    	uint8_t random1 = datagram[3];
+    	uint8_t random2 = datagram[4];
+
+    	uint8_t password[PASS_LENGTH];
+    	memcpy(datagram + 5, password, PASS_LENGTH);
 
         // Send the response back to the client
-        ssize_t numBytesSent = sendto(sock, buffer, numBytesRcvd, 0, (struct sockaddr *) &clntAddr, sizeof(clntAddr));
+        ssize_t numBytesSent = sendto(key->fd, datagram, numBytesRcvd, 0, (struct sockaddr *) &clntAddr, sizeof(clntAddr));
         if (numBytesSent < 0) {
             fprintf(stderr, "sendto() failed");
         } else if (numBytesSent != numBytesRcvd) {

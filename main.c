@@ -13,7 +13,7 @@
 #include "args.h"
 #include "selector.h"
 #include "smtp.h"
-#include "mng.h"
+#include "udpServer.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -56,9 +56,9 @@ int main(const int argc, char **argv) {
 	addr.sin6_addr = in6addr_any;
 	addr.sin6_port = htons(args.smtp_port);
 
-	addr.sin6_family = AF_INET6;
-	addr.sin6_addr = in6addr_any;
-	addr.sin6_port = htons(args.mng_port);
+	addr2.sin6_family = AF_INET6;
+	addr2.sin6_addr = in6addr_any;
+	addr2.sin6_port = htons(args.mng_port);
 
 	const int server = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
 	const int server2 = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
@@ -83,7 +83,7 @@ int main(const int argc, char **argv) {
 		goto finally;
 	}
 
-	if (listen(server, 20) < 0 || listen(server2, 20) < 0) {
+	if (listen(server, 20) < 0) {
 		err_msg = "unable to listen";
 		goto finally;
 	}
@@ -115,6 +115,7 @@ int main(const int argc, char **argv) {
 		err_msg = "unable to create selector";
 		goto finally;
 	}
+
 	const struct fd_handler smtp = {
 	    .handle_read = smtp_passive_accept,
 	    .handle_write = NULL,
@@ -125,8 +126,10 @@ int main(const int argc, char **argv) {
 		.handle_write = NULL,
 		.handle_close = NULL,  // nada que liberar
 	};
+
 	ss = selector_register(selector, server, &smtp, OP_READ, NULL);
 	ss2 = selector_register(selector, server2, &mng, OP_READ, NULL);
+
 	if (ss != SELECTOR_SUCCESS || ss2 != SELECTOR_SUCCESS) {
 		err_msg = "registering fd";
 		goto finally;

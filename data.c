@@ -24,14 +24,15 @@ data_parser_feed (struct data_parser* p, const uint8_t c) {
     		if (c == '.')
     			next = data_crlfdot;
     		else {
-    			buffer_write(&p->output_buffer, c);
-    			next = data_data;
+    			p->state = data_data;
+    			return data_parser_feed(p, c);
     		}
     		break;
 	    case data_data:
 	    	if (c == '\r')
 	    		next = data_cr;
 	    	else {
+	    		p->state = data_data;
 	    		buffer_write(&p->output_buffer, c);
 	    		next = data_data;
 	    	}
@@ -40,19 +41,19 @@ data_parser_feed (struct data_parser* p, const uint8_t c) {
     		if (c == '\n')
     			next = data_crlf;
     		else {
+    			p->state = data_data;
     			buffer_write(&p->output_buffer, '\r');
-    			buffer_write(&p->output_buffer, c);
-    			next = data_data;
+    			return data_parser_feed(p, c);
     		}
     	break;
     	case data_crlf:
     		if (c == '.')
     			next = data_crlfdot;
     		else {
+    			p->state = data_data;
     			buffer_write(&p->output_buffer, '\r');
     			buffer_write(&p->output_buffer, '\n');
-    			buffer_write(&p->output_buffer, c);
-    			next = data_data;
+    			return data_parser_feed(p, c);
     		}
     	break;
     	case data_crlfdotcr:
@@ -62,23 +63,23 @@ data_parser_feed (struct data_parser* p, const uint8_t c) {
     			buffer_write(&p->output_buffer, '\0');
     			next = data_done;
 		    } else {
+		    	p->state = data_data;
 				buffer_write(&p->output_buffer, '\r');
 				buffer_write(&p->output_buffer, '\n');
 				buffer_write(&p->output_buffer, '.');
 				buffer_write(&p->output_buffer, '\r');
-				buffer_write(&p->output_buffer, c);
-				next = data_data;
+				return data_parser_feed(p, c);
 			}
 			break;
 		case data_crlfdot:
 			if (c == '\r')
 				next = data_crlfdotcr;
 			else {
+				p->state = data_data;
 				buffer_write(&p->output_buffer, '\r');
 				buffer_write(&p->output_buffer, '\n');
 				buffer_write(&p->output_buffer, '.');
-				buffer_write(&p->output_buffer, c);
-				next = data_data;
+				return data_parser_feed(p, c);
 			}
             break;
 		case data_done:

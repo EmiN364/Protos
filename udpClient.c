@@ -100,7 +100,8 @@ int main(int argc, char *argv[]) {
 	if (numBytes < 0) {
 		fprintf(stderr, "sendto() failed: %s", strerror(errno));
 		exit(1);
-	} else if (numBytes != sizeof(datagram)) {
+	}
+	if (numBytes != sizeof(datagram)) {
 		fprintf(stderr, "sendto() error, sent unexpected number of bytes");
 		exit(1);
 	}
