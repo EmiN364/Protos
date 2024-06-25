@@ -4,9 +4,9 @@
 Este proyecto desarrolla dos protocolos de comunicación: SMTP y un Protocolo de Monitoreo, implementados por el Grupo 4 para la asignatura "72.07 - Protocolos de Comunicación".
 
 ## Integrantes
-- Candisano Gonzalo
+- Candisano Gonzalo (Legajo: 62616)
 - Gonzalez Rouco Lucas (Legajo: 63366)
-- Neme Emilio Pablo
+- Neme Emilio Pablo (Legajo: 62601)
 - Shlamovitz Theo (Legajo: 62087)
 
 ## Profesores
