@@ -17,6 +17,7 @@
 #include <strings.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/sendfile.h>
 #include <time.h>
 #include <unistd.h>  // close
 
@@ -73,6 +74,8 @@ struct smtp {
 
 	int file_fd;
 	int socket_fd;
+
+	bool done;
 };
 
 struct status global_status = {0};
@@ -193,7 +196,10 @@ static int get_response(struct smtp *state, char *arg, bool is_mail_from) {
 			strncpy(state->mailfrom, arg, at_index);
 			state->mailfrom[at_index] = '\0';
 		} else {
-			addRcptToList(state->rcpt_list, arg);
+			char * str = malloc(strlen(arg) + 1);
+			strncpy(str, arg, at_index);
+			str[at_index] = '\0';
+			addRcptToList(state->rcpt_list, str);
 		}
 		return 0;
 	}
@@ -215,11 +221,14 @@ static int get_response(struct smtp *state, char *arg, bool is_mail_from) {
 			}
 		} else {
 			char *rcptAddr = malloc(len + 1);
-			for (int i = 0; i < len && arg[i]; ++i) {
-				if (arg[i] != ' ') {
+			for (int i = 0; i <= len; ++i) {
+				if (arg[i] != ' ' && arg[i] != '\0') {
 					if (space_found)
 						return 1;
 					rcptAddr[i] = arg[i];
+				} else if(arg[i] == '\0') {
+					rcptAddr[i] = '\0';
+					break;
 				} else {
 					if (!space_found) {
 						space_found = true;
@@ -258,57 +267,59 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp *sta
 			while (current != NULL) {
 				if (build_mail_dir(current->rcpt) != 0)
 					return ERROR;
-				sprintf(state->file_name, "%d.%d", (int) time(NULL), rand() % 100000);
-				sprintf(state->file_full_name, "%s/%s/tmp/%s", BASE_DIR, current->rcpt, state->file_name);
 				current = current->next;
-
-				// Init new file
-				const int file = open(state->file_full_name, O_WRONLY | O_APPEND | O_CREAT, 0644);
-				if (file < 0)
-					return ERROR;
-
-				state->file_fd = file;
-				state->socket_fd = key->fd;
-
-				char to_send[50] = "From ";
-				strcat(to_send, state->mailfrom);
-				concat_date(to_send);
-
-				write(file, to_send, strlen(to_send));
-
-				if (global_status.transformations) {
-					int writefds[2];
-
-					createPipe(writefds);
-
-					int pid = createFork();
-					if (pid == 0) {
-						// Child - Transformations
-
-						// Redirect stdin and stdout to pipes
-						close(STDIN_FILENO);
-						dup(writefds[0]);  // read end of where app writes
-						close(STDOUT_FILENO);
-						dup(file);  // write end of where app reads
-
-						close(writefds[0]);
-						close(writefds[1]);
-						close(file);
-
-					execlp(global_status.program, global_status.program, (char *) NULL);
-					perror("Error while creating slave");
-					exit(EXIT_FAILURE);
-				}
-
-					// Father
-					close(writefds[0]);
-					close(file);
-					state->file_fd = writefds[1];
-				}
-
-				if (SELECTOR_SUCCESS != selector_register(key->s, state->file_fd, &file_handler, OP_NOOP, state))
-					return ERROR;
 			}
+			current = state->rcpt_list->first;
+
+			sprintf(state->file_name, "%d.%d", (int) time(NULL), rand() % 100000);
+			sprintf(state->file_full_name, "%s/%s/tmp/%s", BASE_DIR, current->rcpt, state->file_name);
+
+			// Init new file
+			const int file = open(state->file_full_name, O_WRONLY | O_APPEND | O_CREAT, 0644);
+			if (file < 0)
+				return ERROR;
+
+			state->file_fd = file;
+			state->socket_fd = key->fd;
+
+			char to_send[50] = "From ";
+			strcat(to_send, state->mailfrom);
+			concat_date(to_send);
+
+			write(file, to_send, strlen(to_send));
+
+			if (global_status.transformations) {
+				int writefds[2];
+
+				createPipe(writefds);
+
+				int pid = createFork();
+				if (pid == 0) {
+					// Child - Transformations
+
+					// Redirect stdin and stdout to pipes
+					close(STDIN_FILENO);
+					dup(writefds[0]);  // read end of where app writes
+					close(STDOUT_FILENO);
+					dup(file);  // write end of where app reads
+
+					close(writefds[0]);
+					close(writefds[1]);
+					close(file);
+
+				execlp(global_status.program, global_status.program, (char *) NULL);
+				perror("Error while creating slave");
+				exit(EXIT_FAILURE);
+			}
+
+				// Father
+				close(writefds[0]);
+				close(file);
+				state->file_fd = writefds[1];
+			}
+
+			if (SELECTOR_SUCCESS != selector_register(key->s, state->file_fd, &file_handler, OP_NOOP, state))
+				return ERROR;
 		}
 	} else if (strcasecmp(state->request_parser.request->verb, "mail from") == 0) {
 		if (state->mailfrom[0] != '\0') {
@@ -341,7 +352,6 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp *sta
 			response = "503 5.5.1 Error: need MAIL command\r\n";
 		} else {
 			response = "250 2.1.0 Ok\r\n";
-			state->rcpt_list = malloc(sizeof(rcpt_list));
 			char *arg = state->request_parser.request->arg1;
 			if (strchr(arg, '<') && strchr(arg, '>')) {
 				char content[strlen(arg)];
@@ -368,7 +378,7 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp *sta
 		response = "250 localhost\r\n";
 	} else if (strcasecmp(state->request_parser.request->verb, "quit") == 0) {
 		response = "221 2.0.0 Bye\r\n";
-		res_state = DONE;
+		state->done = true;
 	} else if (state->request_parser.i > 0) {
 		response = "502 5.5.2 Error: command not recognized\r\n";
 	} else {
@@ -499,7 +509,9 @@ static unsigned response_write(struct selector_key *key) {
 	if (n >= 0) {
 		buffer_read_adv(wb, n);
 		if (!buffer_can_read(wb)) {
-			if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)) {
+			if (ATTACHMENT(key)->done)
+				ret = DONE;
+			else if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)) {
 				ret = ATTACHMENT(key)->is_data ? DATA_READ : REQUEST_READ;
 			} else {
 				ret = ERROR;
@@ -512,14 +524,35 @@ static unsigned response_write(struct selector_key *key) {
 	return ret;
 }
 
-void renameRcptFile(rcpt_list *rcpt_list, char *file_name) {
-	rcpt *current = rcpt_list->first;
-	while (current != NULL) {
-		char new_file_name[MAX_PATH];
-		sprintf(new_file_name, "%s/%s/new/%s", BASE_DIR, current->rcpt, file_name);
-		rename(current->rcpt,
-		       new_file_name);  // TODO: check if current->rcpt is right or should be state->full_file_name
-		current = current->next;
+void renameRcptFile(struct smtp * state) {
+	rcpt *current = state->rcpt_list->first;
+	char new_file_name[MAX_PATH];
+	sprintf(new_file_name, "%s/%s/new/%s", BASE_DIR, current->rcpt, state->file_name);
+	rename(state->file_full_name, new_file_name);
+	current = current->next;
+
+	if (current != NULL) {
+		int fd_from = open(new_file_name, O_RDONLY);
+		*new_file_name = '\0';
+
+		while (current != NULL) {
+			sprintf(new_file_name, "%s/%s/new/%s", BASE_DIR, current->rcpt, state->file_name);
+			int fd_to = open(new_file_name, O_WRONLY | O_CREAT, 0666);
+			if (fd_to < 0)
+				exit(1);
+
+			off_t bytesCopied = 0;
+			struct stat fileinfo = {0};
+			fstat(fd_from, &fileinfo);
+			if (sendfile(fd_to, fd_from, &bytesCopied, fileinfo.st_size) < 0) {
+				perror("Error in sendfile");
+				exit(1);
+			}
+
+			close(fd_to);
+			current = current->next;
+		}
+		close(fd_from);
 	}
 }
 
@@ -548,7 +581,7 @@ static unsigned data_write(struct selector_key *key) {
 						close(state->file_fd);
 						// wait(NULL);
 
-						renameRcptFile(state->rcpt_list, state->file_name);
+						renameRcptFile(state);
 
 						state->file_name[0] = '\0';
 						state->file_full_name[0] = '\0';
@@ -569,11 +602,19 @@ static unsigned data_write(struct selector_key *key) {
 
 						const int len = MIN(count, strlen(buffer));
 						memcpy((char *) ptr, buffer, len);
-
 						buffer_write_adv(&state->write_buffer, len);
-						global_status.bytes_transfered += len;
 
+						global_status.bytes_transfered += len;
 						global_status.mails_sent += 1;
+
+						state->mailfrom[0] = '\0';
+						for (rcpt *current = state->rcpt_list->first; current != NULL;) {
+							rcpt *next = current->next;
+							free(current->rcpt);
+							free(current);
+							current = next;
+						}
+						state->rcpt_list->first = NULL;
 
 						ret = RESPONSE_WRITE;
 					}
@@ -678,6 +719,16 @@ static void smtp_close(struct selector_key *key) {
 	struct smtp *state = ATTACHMENT(key);
 	if (state->file_fd > 0)
 		close(state->file_fd);
+
+	rcpt *current = state->rcpt_list->first;
+	while (current != NULL) {
+		rcpt *next = current->next;
+		free(current->rcpt);
+		free(current);
+		current = next;
+	}
+	free(state->rcpt_list);
+
 	global_status.concurrent_connections -= 1;
 	smtp_destroy(state);
 }
@@ -714,6 +765,8 @@ void smtp_passive_accept(struct selector_key *key) {
 	memset(state, 0, sizeof(*state));
 	memcpy(&state->client_addr, &client_addr, client_addr_len);
 	state->client_addr_len = client_addr_len;
+	state->rcpt_list = calloc(1, sizeof(rcpt_list));
+	state->done = false;
 
 	state->stm.initial = RESPONSE_WRITE;
 	state->stm.max_state = ERROR;
