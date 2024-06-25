@@ -14,3 +14,4 @@ Dockerfile
 stress_test
 test.c
 test
+smtpd.log

@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <sys/socket.h>
 
 /*
  * Verifica si un email es válido.
@@ -21,5 +22,7 @@ void concat_date(char * buffer);
 int createPipe(int fildes[2]);
 
 int createFork();
+
+int printSocketAddress(const struct sockaddr *address, char *addrBuffer);
 
 #endif  // PROTOS_UTILS_H

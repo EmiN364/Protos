@@ -16,32 +16,18 @@ static unsigned short port(const char *s) {
 	if (end == s || '\0' != *end || ((LONG_MIN == sl || LONG_MAX == sl) && ERANGE == errno) || sl < 0 ||
 	    sl > USHRT_MAX) {
 		fprintf(stderr, "port should in in the range of 1-65536: %s\n", s);
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 	return sl;
 }
 
 static const char *pass(const char *s) {
 	if (strlen(s) != PASS_LENGTH) {
-		fprintf(stderr, "password should have 8 characters\n");
-		exit(1);
+		fprintf(stderr, "password should have %d characters\n", PASS_LENGTH);
+		exit(EXIT_FAILURE);
 	}
 	return s;
 }
-
-/*static void
-user(char *s, struct users *user) {
-    char *p = strchr(s, ':');
-    if(p == NULL) {
-        fprintf(stderr, "password not found\n");
-        exit(1);
-    } else {
-        *p = 0;
-        p++;
-        user->name = s;
-        user->pass = p;
-    }
-}*/
 
 static void version(void) {
 	fprintf(stderr,
@@ -62,7 +48,7 @@ static void usage(const char *progname) {
 	        "   -v               Imprime información sobre la versión versión y termina.\n"
 	        "\n\n",
 	        progname);
-	exit(1);
+	exit(EXIT_FAILURE);
 }
 
 void parse_args(const int argc, char **argv, struct smtpargs *args) {
@@ -126,7 +112,7 @@ void parse_args(const int argc, char **argv, struct smtpargs *args) {
 				break;*/
 			default:
 				fprintf(stderr, "unknown argument %d.\n", c);
-				exit(1);
+				exit(EXIT_FAILURE);
 		}
 	}
 	if (optind < argc) {
@@ -135,6 +121,6 @@ void parse_args(const int argc, char **argv, struct smtpargs *args) {
 			fprintf(stderr, "%s ", argv[optind++]);
 		}
 		fprintf(stderr, "\n");
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 }

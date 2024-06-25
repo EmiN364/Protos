@@ -14,7 +14,7 @@ $(SMTPD_CLI): $(SMTPD_OBJECTS)
 $(MNG_CLI): udpClient.o
 	$(CC) $(CFLAGS) -o $@ $^
 
-main.o: smtp.h udpServer.h mng.h
+main.o: smtp.h udpServer.h mng.h utils.h
 
 args.o: args.h
 
@@ -33,6 +33,8 @@ data.o: data.h buffer.h
 utils.o: utils.h
 
 udpClient.o: mng.h
+
+udpServer.o: udpServer.h utils.h
 
 clean:
 	- rm -f $(SMTPD_CLI) *.o request_test $(MNG_CLI)

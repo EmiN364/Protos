@@ -1,6 +1,7 @@
 #include "mng.h"
 #include "selector.h"
 #include "smtp.h"
+#include "utils.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -17,35 +18,7 @@
 
 static char addrBuffer[MAX_ADDR_BUFFER];
 
-void sendError(int fd, uint8_t error, __CONST_SOCKADDR_ARG addr, socklen_t addr_len, const uint8_t ids[]);
-
-int printSocketAddress(const struct sockaddr *address, char *addrBuffer) {
-	void *numericAddress;
-
-	in_port_t port;
-
-	switch (address->sa_family) {
-		case AF_INET:
-			numericAddress = &((struct sockaddr_in *) address)->sin_addr;
-			port = ntohs(((struct sockaddr_in *) address)->sin_port);
-			break;
-		case AF_INET6:
-			numericAddress = &((struct sockaddr_in6 *) address)->sin6_addr;
-			port = ntohs(((struct sockaddr_in6 *) address)->sin6_port);
-			break;
-		default:
-			strcpy(addrBuffer, "[unknown type]");  // Unhandled type
-			return 0;
-	}
-	// Convert binary to printable address
-	if (inet_ntop(address->sa_family, numericAddress, addrBuffer, INET6_ADDRSTRLEN) == NULL)
-		strcpy(addrBuffer, "[invalid address]");
-	else {
-		if (port != 0)
-			sprintf(addrBuffer + strlen(addrBuffer), ":%u", port);
-	}
-	return 1;
-}
+void send_error(int fd, uint8_t error, __CONST_SOCKADDR_ARG addr, socklen_t addr_len, const uint8_t ids[]);
 
 void mng_passive_accept(struct selector_key *key) {
 	struct sockaddr_storage clntAddr;  // Client address
@@ -80,7 +53,7 @@ void mng_passive_accept(struct selector_key *key) {
 	uint8_t ids[] = {datagram[i_IDENTIF_1], datagram[i_IDENTIF_2]};
 
 	if (datagram[2] != 0x00) {
-		sendError(key->fd, INVALID_VERSION, (struct sockaddr *) &clntAddr, sizeof(clntAddr), ids);
+		send_error(key->fd, INVALID_VERSION, (struct sockaddr *) &clntAddr, sizeof(clntAddr), ids);
 		return;
 	}
 
@@ -88,12 +61,12 @@ void mng_passive_accept(struct selector_key *key) {
 	memcpy(password, datagram + 5, PASS_LENGTH);
 
 	if (strncmp((char *) password, (char *) key->data, PASS_LENGTH) != 0) {
-		sendError(key->fd, AUTH_ERROR, (struct sockaddr *) &clntAddr, sizeof(clntAddr), ids);
+		send_error(key->fd, AUTH_ERROR, (struct sockaddr *) &clntAddr, sizeof(clntAddr), ids);
 		return;
 	}
 
 	if (datagram[i_COMMAND] > MAX_COMMAND) {
-		sendError(key->fd, INVALID_COMMAND, (struct sockaddr *) &clntAddr, sizeof(clntAddr), ids);
+		send_error(key->fd, INVALID_COMMAND, (struct sockaddr *) &clntAddr, sizeof(clntAddr), ids);
 		return;
 	}
 
@@ -150,7 +123,7 @@ void mng_passive_accept(struct selector_key *key) {
 	}
 }
 
-void sendError(int fd, uint8_t error, __CONST_SOCKADDR_ARG addr, socklen_t addr_len, const uint8_t ids[]) {
+void send_error(int fd, uint8_t error, __CONST_SOCKADDR_ARG addr, socklen_t addr_len, const uint8_t ids[]) {
 	uint8_t datagram[DATAGRAM_LENGTH] = {0};
 	datagram[i_PROT_SIGN_1] = PROTOCOL_SIGN_1;
 	datagram[i_PROT_SIGN_2] = PROTOCOL_SIGN_2;

@@ -76,6 +76,7 @@ struct smtp {
 	int socket_fd;
 
 	bool done;
+	FILE * log_file;
 };
 
 struct status global_status = {0};
@@ -458,18 +459,6 @@ static unsigned int data_read_posta(struct selector_key *key, struct smtp *state
 		ret = ERROR;
 	}
 
-	/*
-	struct selector_key key_file;
-
-	// write to file from buffer if is not empty
-	if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_NOOP)) {
-	    if (SELECTOR_SUCCESS == selector_set_interest_key(&key_file, OP_WRITE))
-	        ret = DATA_WRITE; // Desp Vuelvo a request_read
-	} else {
-	    ret = ERROR;
-	}
-	*/
-
 	return ret;
 }
 
@@ -583,9 +572,6 @@ static unsigned data_write(struct selector_key *key) {
 
 						renameRcptFile(state);
 
-						state->file_name[0] = '\0';
-						state->file_full_name[0] = '\0';
-
 						if (SELECTOR_SUCCESS != selector_unregister_fd(key->s, state->file_fd))
 							return ERROR;
 
@@ -607,14 +593,25 @@ static unsigned data_write(struct selector_key *key) {
 						global_status.bytes_transfered += len;
 						global_status.mails_sent += 1;
 
+						static char addrBuffer[128];
+						printSocketAddress((struct sockaddr *) &state->client_addr, addrBuffer);
+						concat_date(addrBuffer);
+						fprintf(state->log_file, "Mail Sent: %s  MAIL FROM: %s\n", addrBuffer, state->mailfrom);
+
 						state->mailfrom[0] = '\0';
 						for (rcpt *current = state->rcpt_list->first; current != NULL;) {
+							fprintf(state->log_file, "  RCPT TO: %s\n", current->rcpt);
 							rcpt *next = current->next;
 							free(current->rcpt);
 							free(current);
 							current = next;
 						}
+
+						fprintf(state->log_file, "  File: %s\n\n", state->file_name);
+
 						state->rcpt_list->first = NULL;
+						state->file_name[0] = '\0';
+						state->file_full_name[0] = '\0';
 
 						ret = RESPONSE_WRITE;
 					}
@@ -712,6 +709,8 @@ static void smtp_write(struct selector_key *key) {
 }
 
 static void smtp_destroy(struct smtp *state) {
+	if (state != NULL && state->log_file != NULL)
+		fclose(state->log_file);
 	free(state);
 }
 
@@ -728,6 +727,11 @@ static void smtp_close(struct selector_key *key) {
 		current = next;
 	}
 	free(state->rcpt_list);
+
+	static char addrBuffer[128];
+	printSocketAddress((struct sockaddr *) &state->client_addr, addrBuffer);
+	concat_date(addrBuffer);
+	fprintf(state->log_file, "User disconnected: %s\n", addrBuffer);
 
 	global_status.concurrent_connections -= 1;
 	smtp_destroy(state);
@@ -790,6 +794,19 @@ void smtp_passive_accept(struct selector_key *key) {
 	global_status.bytes_transfered += len;
 	global_status.historic_connections += 1;
 	global_status.concurrent_connections += 1;
+
+	FILE *log = fopen("smtpd.log", "a");
+	if (log == NULL) {
+		perror("Error opening log file");
+		exit(1);
+	}
+
+	state->log_file = log;
+
+	static char addrBuffer[128];
+	printSocketAddress((struct sockaddr *) &client_addr, addrBuffer);
+	concat_date(addrBuffer);
+	fprintf(log, "User connected: %s\n", addrBuffer);
 
 	const selector_status ss = selector_register(key->s, client, &smtp_handler, OP_WRITE, state);
 
