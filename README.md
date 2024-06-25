@@ -33,7 +33,15 @@ user@machine:path/ $  make all
 
 ## Uso del servidor
 ```bash
- ./mng_client <Server Address/Name> <Auth> <Server Port/Service> <Command>
+ ./smtpd
+```
+Default Password is: `secretpa`
+```bash
+ ./smtpd -u mipass23
+
+```
+```bash
+ ./smtpd -u mipass23 -P 2626 -p 2525 -T tac
 
 ```
 
