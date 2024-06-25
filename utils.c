@@ -8,7 +8,7 @@
 
 #define BASE_DIR "mails"
 
-int is_valid_email(const char *email) {
+int is_valid_email(const char *email, bool is_mail_from) {
 	int at_index = -1;
 	int len = strlen(email);
 
@@ -43,13 +43,15 @@ int is_valid_email(const char *email) {
 	}
 
 	// Verificar que el dominio sea "pdc.com"
-	const char *expected_domain = "pdc.com";
-	int domain_length = strlen(expected_domain);
-	int domain_index = at_index + 1;  // Índice donde comienza el dominio
+	if (!is_mail_from) {
+		const char *expected_domain = "pdc.com";
+		int domain_length = strlen(expected_domain);
+		int domain_index = at_index + 1;  // Índice donde comienza el dominio
 
-	for (int i = 0; i < domain_length; ++i) {
-		if (email[domain_index + i] != expected_domain[i] && email[domain_index + i] != expected_domain[i] - 32) {
-			return 0;  // Caracteres del dominio no coinciden (considerando mayúsculas y minúsculas)
+		for (int i = 0; i < domain_length; ++i) {
+			if (email[domain_index + i] != expected_domain[i] && email[domain_index + i] != expected_domain[i] - 32) {
+				return 0;  // Caracteres del dominio no coinciden (considerando mayúsculas y minúsculas)
+			}
 		}
 	}
 
@@ -118,12 +120,29 @@ int build_mail_dir(const char *user) {
 	return 0;
 }
 
+bool seed_setted = false;
+
 void generate_id(char *buffer) {
 	const char caracteres[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 	const int num_caracteres = sizeof(caracteres) - 1;
+
+	if (seed_setted == false) {
+		srand(time(NULL));
+		seed_setted = true;
+	}
 
 	for (int i = 0; i < 9; i++) {
 		buffer[i] = caracteres[rand() % num_caracteres];
 	}
 	buffer[9] = '\0';  // Asegurarse de que la cadena termine en '\0'
+}
+
+void concat_date(char * buffer) {
+	char date_formatted[72];
+	time_t rawtime;
+	time(&rawtime);
+	const struct tm *tm_info = localtime(&rawtime);
+	strftime(date_formatted, sizeof(date_formatted), " %a %b %d %H:%M:%S %Y", tm_info);
+	strcat(buffer, date_formatted);
+	strcat(buffer, "\r\n");
 }

@@ -1,15 +1,19 @@
 #ifndef PROTOS_UTILS_H
 #define PROTOS_UTILS_H
 
+#include <stdbool.h>
+
 /*
  * Verifica si un email es válido.
  */
-int is_valid_email(const char *email);
+int is_valid_email(const char *email, bool is_mail_from);
 
 int create_directory(const char *path);
 
 int build_mail_dir(const char *user);
 
 void generate_id(char *buffer);
+
+void concat_date(char * buffer);
 
 #endif  // PROTOS_UTILS_H

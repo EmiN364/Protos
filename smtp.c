@@ -4,6 +4,7 @@
 #include "data.h"
 #include "request.h"
 #include "stm.h"
+#include "utils.h"
 
 #include <arpa/inet.h>
 #include <assert.h>  // assert
@@ -156,7 +157,7 @@ static int get_response(struct smtp *state, char *arg, bool is_mail_from) {
 	int at_index = is_valid_email(arg, is_mail_from);
 	if (at_index > 0) {
 		// Es un correo electrónico válido, guardar el nombre de usuario
-		if (is_mail_from == true) {
+		if (is_mail_from) {
 			strncpy(state->mailfrom, arg, at_index);
 			state->mailfrom[at_index] = '\0';
 		} else {
@@ -218,6 +219,7 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp *sta
 				return ERROR;
 
 			time_t t = time(NULL);
+			srand(t);
 			sprintf(state->file_name, "%d.%d", (int) t, rand() % 100000);
 			sprintf(state->file_full_name, "%s/%s/tmp/%s", BASE_DIR, state->rcpt, state->file_name);
 
@@ -228,6 +230,12 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp *sta
 
 			state->file_fd = file;
 			state->socket_fd = key->fd;
+
+			char to_send[300] = "From ";
+			strcat(to_send, state->mailfrom);
+			concat_date(to_send);
+
+			write(file, to_send, strlen(to_send));
 
 			if (SELECTOR_SUCCESS != selector_register(key->s, file, &file_handler, OP_NOOP, state))
 				return ERROR;
