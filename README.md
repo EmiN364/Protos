@@ -33,10 +33,11 @@ user@machine:path/ $  make all
 
 ## Uso del servidor
 ```bash
-Agregar el uso
+ ./mng_client <Server Address/Name> <Auth> <Server Port/Service> <Command>
+
 ```
 
 ## Uso del cliente
 ```bash
-Agregar el uso
+ ./mng_client <Server Address/Name> <Auth> <Server Port/Service> <Command>
 ```
