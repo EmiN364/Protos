@@ -49,6 +49,9 @@ struct smtp {
 	char mailfrom[255];
 	char rcpt[255]; // TODO: Change to list
 
+	char file_full_name[300];
+	char file_name[20];
+
 	int file_fd;
 	int socket_fd;
 };
@@ -147,6 +150,66 @@ static void file_write(struct selector_key *key) {
 	}*/
 }
 
+#define BASE_DIR "mails"
+
+int create_directory(const char *path) {
+	struct stat st = {0};
+	if (stat(path, &st) == -1) {
+		if (mkdir(path, 0755) != 0) {
+			perror("mkdir failed");
+			return -1;
+		}
+	}
+	return 0;
+}
+
+int build_mail_dir(const char *user) {
+	char user_dir[100];
+	char cur_dir[110];
+	char new_dir[110];
+	char tmp_dir[110];
+
+	// Create base directory
+	if (create_directory(BASE_DIR) != 0) {
+		return -1;
+	}
+
+	if (strlen(user) > 80)
+		return -1;
+
+	// Construct user directory paths
+	snprintf(user_dir, sizeof(user_dir), "%s/%s", BASE_DIR, user);
+	snprintf(cur_dir, sizeof(cur_dir), "%s/cur", user_dir);
+	snprintf(new_dir, sizeof(new_dir), "%s/new", user_dir);
+	snprintf(tmp_dir, sizeof(tmp_dir), "%s/tmp", user_dir);
+
+	// Create directories
+	if (create_directory(user_dir) != 0) {
+		return -1;
+	}
+	if (create_directory(cur_dir) != 0) {
+		return -1;
+	}
+	if (create_directory(new_dir) != 0) {
+		return -1;
+	}
+	if (create_directory(tmp_dir) != 0) {
+		return -1;
+	}
+
+	return 0;
+}
+
+void generate_id(char * buffer) {
+	const char caracteres[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+	const int num_caracteres = sizeof(caracteres) - 1;
+
+	for (int i = 0; i < 9; i++) {
+		buffer[i] = caracteres[rand() % num_caracteres];
+	}
+	buffer[9] = '\0'; // Asegurarse de que la cadena termine en '\0'
+}
+
 static const struct fd_handler file_handler = {
 	.handle_read = NULL,
 	.handle_write = file_write,
@@ -168,24 +231,16 @@ static enum smtpstate request_process(struct selector_key *key, struct smtp * st
 
 			data_read_init(key);
 
-			struct stat st = {0};
-
-			/*"mails/" + state->rcpt*/
-			char file_name[100] = "mails/";
-			if (strlen(state->rcpt) > 90)
+			if (build_mail_dir(state->rcpt) != 0)
 				return ERROR;
 
-			strcat(file_name, state->rcpt);
-
-			if (stat("mails", &st) == -1) {
-				if (mkdir("mails", 0755) == -1) {
-					perror("Error creating directory");
-					return ERROR;
-				}
-			}
+			// Construct filename: date +%s + ".random"
+			time_t t = time(NULL);
+			sprintf(state->file_name, "%d.%d", (int) t, rand() % 100000);
+			sprintf(state->file_full_name, "%s/%s/tmp/%s", BASE_DIR, state->rcpt, state->file_name);
 
 			// Init new file
-			const int file = open(file_name, O_WRONLY | O_APPEND | O_CREAT, 0644);
+			const int file = open(state->file_full_name, O_WRONLY | O_APPEND | O_CREAT, 0644);
 			if (file < 0)
 				return ERROR;
 
@@ -381,14 +436,28 @@ static unsigned data_write(struct selector_key *key) {
 						state->is_data = false;
 
 						close(state->file_fd);
+
+						char new_file_name[300];
+						sprintf(new_file_name, "%s/%s/new/%s", BASE_DIR, state->rcpt, state->file_name);
+						rename(state->file_full_name, new_file_name);
+
+						state->file_name[0] = '\0';
+						state->file_full_name[0] = '\0';
+
 						state->file_fd = 0;
 						data_read_close(key);
 
 						ptr = buffer_write_ptr(&state->write_buffer, &count);
 
-						// TODO: Check that all the response is in buffer, and that 35 is correct or it should be 36
-						const int len = MIN(35, count);
-						memcpy((char *) ptr, "250 2.0.0 Ok: queued as 5E0AA44E8\r\n", len);
+						// TODO: Check that all the response is in buffer
+						char id[10];
+						generate_id(id);
+						char buffer[50];
+						sprintf(buffer, "250 2.0.0 Ok: queued as %s\r\n", id);
+
+						const int len = MIN(count, strlen(buffer));
+						memcpy((char *) ptr, buffer, len);
+
 						buffer_write_adv(&state->write_buffer, len);
 						global_status.bytes_transfered += len;
 
