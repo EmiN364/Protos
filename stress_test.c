@@ -9,7 +9,7 @@
 
 #define SMTPD_PORT 2525
 #define SMTPD_SERVER "127.0.0.1"
-#define NUM_THREADS 400
+#define NUM_THREADS 500
 
 void *send_email(void *threadid) {
     long tid = (long)threadid;
@@ -106,7 +106,7 @@ int main() {
             printf("ERROR; return code from pthread_create() is %d\n", rc);
             exit(-1);
         }
-        if (t % 50 == 0) {
+        if (t % 35 == 0) {
 			sleep(1);
 		}
     }
