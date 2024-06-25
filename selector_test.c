@@ -153,8 +153,8 @@ END_TEST
 
 Suite * 
 suite(void) {
-    Suite *s  = suite_create("nio");
-    TCase *tc = tcase_create("nio");
+    Suite *s  = suite_create("selector");
+    TCase *tc = tcase_create("selector");
 
     tcase_add_test(tc, test_next_capacity);
     tcase_add_test(tc, test_selector_error);

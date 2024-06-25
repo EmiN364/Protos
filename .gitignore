@@ -15,3 +15,7 @@ stress_test
 test.c
 test
 smtpd.log
+request_test
+buffer_test
+stm_test
+selector_test

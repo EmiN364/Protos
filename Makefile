@@ -42,11 +42,20 @@ clean:
 request_test: request_test.o request.o buffer.o
 	$(CC) $(CFLAGS) -o $@ $^ -pthread -lcheck_pic -lrt -lm -lsubunit
 
+buffer_test: buffer_test.o buffer.o
+	$(CC) $(CFLAGS) -o $@ $^ -pthread -lcheck_pic -lrt -lm -lsubunit
+
+stm_test: stm_test.o stm.o selector.o
+	$(CC) $(CFLAGS) -o $@ $^ -pthread -lcheck_pic -lrt -lm -lsubunit
+
+selector_test: selector_test.o
+	$(CC) $(CFLAGS) -o $@ $^ -pthread -lcheck_pic -lrt -lm -lsubunit
+
 stress_test: stress_test.o
 	$(CC) $(CFLAGS) -o $@ $^
 
-test: request_test
-	./request_test
+test: request_test buffer_test stm_test selector_test
+	./request_test ; ./buffer_test ; ./stm_test ; ./selector_test
 
 stress: stress_test
 	./stress_test
