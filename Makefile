@@ -37,7 +37,7 @@ udpClient.o: mng.h
 udpServer.o: udpServer.h utils.h
 
 clean:
-	- rm -f $(SMTPD_CLI) *.o request_test stress_test $(MNG_CLI)
+	- rm -f $(SMTPD_CLI) *.o request_test stm_test selector_test stress_test $(MNG_CLI)
 
 request_test: request_test.o request.o buffer.o
 	$(CC) $(CFLAGS) -o $@ $^ -pthread -lcheck_pic -lrt -lm -lsubunit
