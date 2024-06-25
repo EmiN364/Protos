@@ -210,7 +210,7 @@ void generate_id(char * buffer) {
 	buffer[9] = '\0'; // Asegurarse de que la cadena termine en '\0'
 }
 
-static int is_valid_email(const char *email) {
+static int is_valid_email(const char *email, bool is_mail_from) {
 	int at_index = -1;
 	int len = strlen(email);
 
@@ -239,21 +239,23 @@ static int is_valid_email(const char *email) {
 			if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
 				  (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-')) {
 				return 0; // Caracter no válido en el usuario
-				  }
+			}
 		}
 		return at_index; // Es válido
 	}
 
-	// Verificar que el dominio sea "pdc.com"
-	const char *expected_domain = "pdc.com";
-	int domain_length = strlen(expected_domain);
-	int domain_index = at_index + 1; // Índice donde comienza el dominio
+	if (is_mail_from == false) {
+		// Verificar que el dominio sea "pdc.com"
+		const char *expected_domain = "pdc.com";
+		int domain_length = strlen(expected_domain);
+		int domain_index = at_index + 1; // Índice donde comienza el dominio
 
-	for (int i = 0; i < domain_length; ++i) {
-		if (email[domain_index + i] != expected_domain[i] &&
-			email[domain_index + i] != expected_domain[i] - 32) {
-			return 0; // Caracteres del dominio no coinciden (considerando mayúsculas y minúsculas)
+		for (int i = 0; i < domain_length; ++i) {
+			if (email[domain_index + i] != expected_domain[i] &&
+				email[domain_index + i] != expected_domain[i] - 32) {
+				return 0; // Caracteres del dominio no coinciden (considerando mayúsculas y minúsculas)
 			}
+		}
 	}
 
 	// Verificar que el usuario cumpla con las reglas: ^[a-zA-Z][a-zA-Z0-9._-]*@
@@ -274,10 +276,10 @@ static int is_valid_email(const char *email) {
 }
 
 static int get_response(struct smtp *state, char *arg, bool is_mail_from) {
-	int at_index = is_valid_email(arg);
+	int at_index = is_valid_email(arg, is_mail_from);
 	if (at_index > 0) {
 		// Es un correo electrónico válido, guardar el nombre de usuario
-		if (is_mail_from) {
+		if (is_mail_from == true) {
 			strncpy(state->mailfrom, arg, at_index);
 			state->mailfrom[at_index] = '\0';
 		} else {
@@ -294,11 +296,19 @@ static int get_response(struct smtp *state, char *arg, bool is_mail_from) {
 			if (arg[i] != ' ') {
 				if (space_found)
 					return 1;
-				state->mailfrom[i] = arg[i];
+				if (is_mail_from == true) {
+					state->mailfrom[i] = arg[i];
+				} else {
+					state->rcpt[i] = arg[i];
+				}
 			} else {
 				if (!space_found) {
 					space_found = true;
-					state->mailfrom[i] = '\0';
+					if (is_mail_from == true) {
+						state->mailfrom[i] = '\0';
+					} else {
+						state->rcpt[i] = '\0';
+					}
 				}
 			}
 		}
@@ -716,9 +726,11 @@ void smtp_passive_accept(struct selector_key *key) {
 
 	const int client = accept(key->fd, (struct sockaddr *) &client_addr, &client_addr_len);
 	if (client == -1) {
+		fprintf(stderr, "Failed to accept client\n");
 		goto fail;
 	}
 	if (selector_fd_set_nio(client) == -1) {
+		fprintf(stderr, "Failed to set client socket to non-blocking\n");
 		goto fail;
 	}
 	state = malloc(sizeof(struct smtp));
@@ -726,6 +738,7 @@ void smtp_passive_accept(struct selector_key *key) {
 		// sin un estado, nos es imposible manejaro.
 		// tal vez deberiamos apagar accept() hasta que detectemos
 		// que se liberó alguna conexión.
+		fprintf(stderr, "Failed to allocate memory for smtp state\n");
 		goto fail;
 	}
 	memset(state, 0, sizeof(*state));
@@ -755,7 +768,10 @@ void smtp_passive_accept(struct selector_key *key) {
 	global_status.historic_connections += 1;
 	global_status.concurrent_connections += 1;
 
-	if (SELECTOR_SUCCESS != selector_register(key->s, client, &smtp_handler, OP_WRITE, state)) {
+	selector_status ss = selector_register(key->s, client, &smtp_handler, OP_WRITE, state);
+
+	if (SELECTOR_SUCCESS != ss) {
+		fprintf(stderr, "Failed to register client socket with selector (%d)\n", ss);
 		goto fail;
 	}
 	return;
