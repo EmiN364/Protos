@@ -55,8 +55,8 @@ extern enum data_state data_parser_feed(struct data_parser *p, const uint8_t c) 
 			break;
 		case data_crlfdotcr:
 			if (c == '\n') {
-				buffer_write(&p->output_buffer, '\r');
-				buffer_write(&p->output_buffer, '\n');
+				/*buffer_write(&p->output_buffer, '\r');
+				buffer_write(&p->output_buffer, '\n');*/
 				buffer_write(&p->output_buffer, '\0');
 				next = data_done;
 			} else {
